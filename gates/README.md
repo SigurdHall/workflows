@@ -10,6 +10,7 @@ The implementation is `src/workflows/gates.py`; this page is the catalog.
 | Gate | Checks | Fails with |
 |---|---|---|
 | `base_identity` | HEAD is the frozen base or a commit directly on it; optionally that the worktree is clean | `unknown_base`, `base_mismatch`, `dirty_worktree` |
+| `candidate_changed` | The candidate differs from the base at all | `empty_candidate` |
 | `scope` | No path outside the contract's `allowed_paths` changed — including untracked additions and both ends of a rename | `out_of_scope_change` |
 | `protected_hash` | Protected files are byte-identical to the base | `protected_modified`, `protected_deleted`, `protected_missing_at_base` |
 | `verification_command` | The contract's command exits as the contract says | `nonzero_exit`, `command_not_found`, `timeout` |
@@ -29,6 +30,13 @@ The scope gate reads the diff *and* `git ls-files --others`.
 **A rename is judged at both ends.** Moving a file out of scope changes a
 path the contract never allowed, so both the old and the new path must be
 in scope.
+
+**An empty candidate is a failure, not a pass.** Every other gate passes an
+untouched worktree for free: nothing is out of scope, no protected file
+moved, and the base's own verification still exits zero. `candidate_changed`
+is the gate that stops a flow from reporting success for work that never
+happened. In a dry run it reports NOT_RUN with a non-claim, because a dry
+run was never going to produce a candidate.
 
 **No silent fallback for a missing command.** A verification command whose
 executable does not exist fails with `command_not_found` — never "skipped",

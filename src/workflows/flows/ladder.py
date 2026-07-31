@@ -99,6 +99,11 @@ def escalate_to_level_2(
             f"{escalation.level_2_on_severity}"
         )
     review_result = combined_result(review_envelopes)
+    if review_result == "INCONCLUSIVE":
+        # A reviewer that could not conclude is exactly what a second opinion
+        # is for. Treating it as "no signal" would silently accept the one
+        # answer that says nothing.
+        return "level-1 review could not conclude"
     if gate_result == "PASS" and review_result == "FAIL":
         return "the gates passed the candidate the reviewer failed"
     if gate_result == "FAIL" and review_result == "PASS":

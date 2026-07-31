@@ -217,9 +217,27 @@ class DryRunner:
                 tokens=TokenUsage(),
                 lens_id=call.lens_id,
             ),
-            output=stub_for(call.output_schema, self.registry),
+            output=_honest_stub(call.output_schema, self.registry),
             detail="dry run: the prompt was composed and recorded, no model was called",
         )
+
+
+def _honest_stub(schema: dict[str, Any], registry: Any) -> Any:
+    """A stub that claims nothing.
+
+    ``stub_for`` picks the first allowed enum value, and for a result field
+    that is PASS. A dry run that returns PASS-shaped stubs invites every
+    consumer downstream to read a materialization exercise as a judgment, so
+    any result the schema lets us leave unclaimed is set to NOT_RUN.
+    """
+    stub = stub_for(schema, registry)
+    if not isinstance(stub, dict) or stub.get("result") not in ("PASS", "FAIL"):
+        return stub
+    candidate = {**stub, "result": "NOT_RUN"}
+    registry = registry if registry is not None else schema_module.default_registry()
+    if schema_module.validate(candidate, schema, registry=registry):
+        return stub  # this schema does not allow an unclaimed result
+    return candidate
 
 
 def _elapsed_ms(started: float) -> int:

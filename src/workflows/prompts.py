@@ -111,6 +111,41 @@ def review(
     )
 
 
+def synthesis(
+    *,
+    contract: dict[str, Any],
+    output_schema: dict[str, Any],
+    candidates: Sequence[tuple[str, str]],
+    focus_hint: str | None = None,
+) -> str:
+    """A synthesis prompt: several lens candidates, one integrated result.
+
+    The synthesizer is the one role that legitimately sees other producers'
+    work — that is what it is for. It sees their *candidates*, labelled by
+    lens, not their reasoning: a diff is a fact, and an explanation of a diff
+    is a story about one.
+    """
+    body = "\n\n".join(
+        f"### Candidate from {lens_id}\n\n```diff\n{diff.strip()}\n```"
+        for lens_id, diff in candidates
+    )
+    return _assemble(
+        [
+            _header("synthesis"),
+            _section("Contract", _json(contract)),
+            _section(
+                "Candidates to integrate",
+                body
+                + "\n\nProduce one integrated candidate that satisfies the "
+                "contract. Where two candidates conflict, choose and say why "
+                "in a decision; do not merge both.",
+            ),
+            _focus_section(focus_hint),
+            _output_section(output_schema),
+        ]
+    )
+
+
 def repair(
     *,
     contract: dict[str, Any],

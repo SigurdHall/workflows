@@ -210,8 +210,10 @@ def _repair_step(
 ) -> dict[str, Any]:
     """Targeted repair: relevant lenses only, rebuilt from the original base."""
     step_id = f"repair-r{round_index}"
-    recorded = context.run.step(step_id)
-    if recorded is None or recorded.get("state") != "COMPLETED":
+    if not base.already_produced(context, step_id):
+        # Only reset when this repair has not run. Resetting a worktree whose
+        # repair is already on disk would discard the work and then ask a
+        # model to redo it.
         base.reset_to_base(context)
 
     available = list(context.work_lenses or (DEFAULT_WORK_LENS,))
@@ -260,5 +262,4 @@ def _verdict(
         superseded_steps=superseded or (),
         extra_non_claims=extra_non_claims,
     )
-    context.run.write_artifact("verdict.json", document)
-    return document
+    return base.write_verdict(context, document)

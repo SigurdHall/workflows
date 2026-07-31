@@ -42,6 +42,7 @@
       "type": "string",
       "enum": [
         "clean",
+        "empty_candidate",
         "out_of_scope_change",
         "protected_modified",
         "protected_deleted",

@@ -308,7 +308,7 @@ class EscalationTest(FlowTestCase):
             self.repo,
             [
                 (self.edit_in_scope, WORK_OUTPUT),
-                (None, review_output("PASS", [dict(finding("LOW"), status="RESOLVED")])),
+                (None, review_output("PASS", [finding("LOW")])),
             ],
         )
         verdict = implement.run(self.context(runner))
@@ -323,6 +323,47 @@ class EscalationTest(FlowTestCase):
             ladder.escalate_to_level_2([{"result": "FAIL"}], "PASS", Escalation()),
             "the gates passed the candidate the reviewer failed",
         )
+
+    def test_thresholds_come_from_the_plan_and_fall_back_to_defaults(self) -> None:
+        settings = Escalation.from_plan(
+            {
+                "level_2_on_severity": "MEDIUM",
+                "level_3_on_conflict": False,
+                "stop_on_severity": "HIGH",
+                "max_repair_rounds": 0,
+                "dryness_rounds": 3,
+            }
+        )
+        self.assertEqual(settings.level_2_on_severity, "MEDIUM")
+        self.assertFalse(settings.level_3_on_conflict)
+        self.assertEqual(settings.max_repair_rounds, 0)
+        self.assertEqual(settings.dryness_rounds, 3)
+        self.assertEqual(Escalation.from_plan(None), Escalation())
+        self.assertEqual(
+            Escalation.from_plan({"stop_on_severity": "MEDIUM"}).level_2_on_severity,
+            Escalation().level_2_on_severity,
+        )
+
+    def test_a_lower_threshold_escalates_where_the_default_would_not(self) -> None:
+        low = [{"result": "FAIL", "findings": [finding("MEDIUM")]}]
+        self.assertIsNone(ladder.escalate_to_level_2(low, "FAIL", Escalation()))
+        self.assertIsNotNone(
+            ladder.escalate_to_level_2(low, "FAIL", Escalation(level_2_on_severity="MEDIUM"))
+        )
+
+    def test_zero_repair_rounds_means_no_repair(self) -> None:
+        runner = ScriptedRunner(
+            self.repo,
+            [
+                (self.edit_in_scope, WORK_OUTPUT),
+                (None, review_output("FAIL", [finding("HIGH")])),
+                (None, review_output("FAIL", [finding("HIGH", "F-2")])),
+            ],
+        )
+        context = self.context(runner, escalation=Escalation(max_repair_rounds=0))
+        verdict = implement.run(context)
+        self.assertEqual(verdict["result"], "FAIL")
+        self.assertFalse([call for call in runner.calls if "repair" in call.step_id])
 
     def test_level_3_runs_only_on_an_unresolved_conflict(self) -> None:
         settings = Escalation()
@@ -493,6 +534,161 @@ class ResumeTest(FlowTestCase):
         )
         self.assertEqual(envelope, first)
         self.assertEqual(again.calls, [])
+
+
+class ReviewRegressionTest(FlowTestCase):
+    """Counter-examples an independent review of M4 found passing as clean."""
+
+    def edit_in_scope(self, repo: TempRepo) -> None:
+        repo.write("src/example/util.py", "VALUE = 2\n")
+
+    def test_an_envelope_written_before_the_crash_is_adopted_not_recomputed(self) -> None:
+        """The kill window: envelope on disk, manifest still RUNNING.
+
+        Trusting the manifest alone re-invokes a model that already answered.
+        """
+        runner = ScriptedRunner(
+            self.repo, [(self.edit_in_scope, WORK_OUTPUT), (None, review_output("PASS"))]
+        )
+        context = self.context(runner)
+        implement.run(context)
+        recorded = context.run.read_artifact("envelopes/work-1.json")
+
+        # Rewind the manifest to the crash window, keeping the envelope.
+        manifest = context.run.read_manifest()
+        for step in manifest["steps"]:
+            if step["step_id"] == "work-1":
+                step["state"] = "RUNNING"
+                step.pop("envelope_path", None)
+        context.run.write_manifest(manifest)
+
+        silent = ScriptedRunner(self.repo, [])
+        adopted = base.step(
+            self.context(silent),
+            "work-1",
+            "work",
+            lambda: (_ for _ in ()).throw(AssertionError("re-invoked a completed step")),
+        )
+        self.assertEqual(adopted, recorded)
+        self.assertEqual(silent.calls, [])
+        self.assertTrue(self.context(silent).run.is_completed("work-1"))
+
+    def test_a_repair_already_on_disk_is_not_reset_away(self) -> None:
+        runner = ScriptedRunner(
+            self.repo,
+            [
+                (
+                    lambda repo: (
+                        repo.write("src/example/util.py", "VALUE = 2\n"),
+                        repo.write("tests/test_calc.py", "tampered\n"),
+                    ),
+                    WORK_OUTPUT,
+                ),
+                (self.edit_in_scope, WORK_OUTPUT),
+                (None, review_output("PASS")),
+            ],
+        )
+        context = self.context(runner)
+        implement.run(context)
+        produced = (self.repo.path / "src" / "example" / "util.py").read_text(encoding="utf-8")
+
+        manifest = context.run.read_manifest()
+        for step in manifest["steps"]:
+            if step["step_id"] == "repair-r1":
+                step["state"] = "RUNNING"
+        context.run.write_manifest(manifest)
+
+        silent = ScriptedRunner(self.repo, [])
+        second = self.context(silent)
+        self.assertTrue(base.already_produced(second, "repair-r1"))
+        implement.run(second)
+        self.assertEqual(
+            (self.repo.path / "src" / "example" / "util.py").read_text(encoding="utf-8"),
+            produced,
+            "a repair on disk must not be reset away and redone",
+        )
+        self.assertEqual(silent.calls, [])
+
+    def test_a_review_may_not_dispose_of_its_own_finding(self) -> None:
+        for status in ("ACCEPTED_RISK", "WITHDRAWN", "RESOLVED"):
+            with self.subTest(status=status):
+                self.setUp()
+                dismissed = review_output(
+                    "PASS", [dict(finding("CRITICAL"), status=status)]
+                )
+                runner = ScriptedRunner(
+                    self.repo,
+                    [
+                        (self.edit_in_scope, WORK_OUTPUT),
+                        (None, dismissed),
+                        (None, dismissed),
+                    ],
+                )
+                context = self.context(runner)
+                verdict = implement.run(context)
+                retry = [call for call in runner.calls if "review" in call.step_id][1]
+                self.assertIn("review_may_not_dispose_of_its_own_finding", retry.prompt)
+                self.assertEqual(verdict["result"], "BLOCKED")
+
+    def test_a_pass_with_no_criteria_at_all_is_rejected(self) -> None:
+        vacuous = dict(review_output("PASS"), criterion_results=[])
+        runner = ScriptedRunner(
+            self.repo,
+            [(self.edit_in_scope, WORK_OUTPUT), (None, vacuous), (None, vacuous)],
+        )
+        context = self.context(runner)
+        verdict = implement.run(context)
+        retry = [call for call in runner.calls if "review" in call.step_id][1]
+        self.assertIn("pass_without_criteria", retry.prompt)
+        self.assertEqual(verdict["result"], "BLOCKED")
+
+    def test_a_candidate_identical_to_the_base_fails_its_gates(self) -> None:
+        runner = ScriptedRunner(
+            self.repo, [(None, dict(WORK_OUTPUT, changed_paths=[]))]
+        )
+        context = self.context(runner, escalation=Escalation(max_repair_rounds=0))
+        verdict = implement.run(context)
+        self.assertEqual(verdict["result"], "FAIL")
+        self.assertFalse([call for call in runner.calls if "review" in call.step_id])
+        gate = context.run.read_artifact("gates/gates-post-r0/candidate_changed.1.json")
+        self.assertEqual((gate["result"], gate["reason_code"]), ("FAIL", "empty_candidate"))
+
+    def test_an_inconclusive_review_escalates_for_a_second_opinion(self) -> None:
+        runner = ScriptedRunner(
+            self.repo,
+            [
+                (self.edit_in_scope, WORK_OUTPUT),
+                (None, review_output("INCONCLUSIVE")),
+                (None, review_output("FAIL", [finding("MEDIUM")])),
+                (self.edit_in_scope, WORK_OUTPUT),
+                (None, review_output("PASS")),
+            ],
+        )
+        context = self.context(runner)
+        verdict = implement.run(context)
+        self.assertIn(2, verdict["ladder_levels_run"])
+        self.assertTrue(
+            any("could not conclude" in claim for claim in verdict["non_claims"])
+        )
+
+    def test_a_producer_does_not_grade_its_own_work(self) -> None:
+        runner = ScriptedRunner(
+            self.repo, [(self.edit_in_scope, WORK_OUTPUT), (None, review_output("PASS"))]
+        )
+        context = self.context(runner)
+        implement.run(context)
+        work = context.run.read_artifact("envelopes/work-1.json")
+        self.assertEqual(work["result"], "NOT_RUN")
+        self.assertEqual(work["status"], "COMPLETED")
+
+    def test_a_finished_run_is_not_re_decided(self) -> None:
+        runner = ScriptedRunner(
+            self.repo, [(self.edit_in_scope, WORK_OUTPUT), (None, review_output("PASS"))]
+        )
+        context = self.context(runner)
+        first = implement.run(context)
+        again = implement.run(self.context(ScriptedRunner(self.repo, [])))
+        self.assertEqual(again, first, "a verdict is terminal; a rerun returns it")
 
 
 class BlockedBaseTest(FlowTestCase):

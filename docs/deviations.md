@@ -195,3 +195,58 @@ runs several times in a flow — before the work, after it, and again after
 each repair — and run artifacts are append-only, so a single
 `gates/<gate>.json` path made the second run of a gate fail outright. Found
 by the first flow test, not by reasoning.
+
+## M5
+
+**D-M5-1 — Fan-out defaults to sequential workers.** The roadmap says "N
+parallel worker calls"; the isolation requirement it states — per-worker
+worktrees, never a shared write target — is what makes the result correct,
+and concurrency only changes wall-clock. `max_parallel_workers` defaults to
+1 so a run is reproducible by default, and a plan raises it. Worktree
+creation stays serialized at any width: parallel creation is how you meet
+`packed-refs.lock`.
+
+**D-M5-2 — The dryness stop rule is implemented and tested but not wired
+into the fan-out flow.** The roadmap scopes v0's width to a plan parameter
+and asks for the dryness rule "for the iterative variant", which v0 does
+not ship. `flows/dryness.py` implements and tests it — including the
+charter's case that one lens returning empty twice is not two dry rounds —
+and every fan-out verdict carries a non-claim saying the width was chosen,
+not measured, so a plan parameter cannot read as a coverage claim.
+
+**D-M5-3 — Duplicate lens ids in a fan-out lens set collapse to one
+worker.** A worker's step id derives from its lens, and step ids are the
+resume key. Listing a lens twice therefore produces one worker, not two —
+which matches the design intent (the same perspective twice is not
+breadth), but is worth stating because a plan author might expect two.
+
+**D-M5-5 — Six rules added after an independent review of M4, none of them
+in the roadmap.** All six were counter-examples the review executed against
+the frozen M4 commit, not hypotheticals:
+
+1. A step whose envelope reached disk before its manifest record was
+   re-invoked on resume — and for a repair step, the worktree was reset
+   first, destroying work that was already done. The artifact now wins over
+   the index.
+2. Resuming a run with a different contract or base was silently accepted,
+   so gates ran against one contract while every envelope was stamped with
+   another. Both are compared against the manifest and refused.
+3. A review could raise a CRITICAL finding, mark it `ACCEPTED_RISK` itself,
+   and return PASS — the model under judgment clearing its own worst
+   finding. A review result may now only emit findings as OPEN.
+4. A PASS with an empty `criterion_results` validated cleanly: a judgment
+   about nothing. `pass_without_criteria` rejects it.
+5. An untouched worktree passed every gate for free. The
+   `candidate_changed` gate closes it.
+6. A level-1 review returning INCONCLUSIVE did not escalate, so the one
+   answer that says nothing was the one that stopped the ladder.
+
+Two smaller consequences: a producing step's envelope now reports
+`NOT_RUN` rather than `PASS`, because a producer evaluates no criterion;
+and re-running a finished run returns its recorded verdict instead of
+writing a second one.
+
+**D-M5-4 — Worker worktrees are never removed automatically.** A killed
+run's worktrees are exactly what a resumed run reuses, so cleanup is an
+explicit call (`fanout.cleanup_worktrees`) rather than a `finally` block
+that would make every kill unresumable.

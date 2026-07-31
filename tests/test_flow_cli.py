@@ -118,6 +118,41 @@ class FlowCliTest(unittest.TestCase):
         )
         self.assertEqual(code, flow.EXIT_OK, err)
 
+    def test_resuming_with_a_different_contract_is_refused(self) -> None:
+        run(*self.args("--dry-run", "--run-id", "run-frozen"))
+        changed = dict(CONTRACT, goal=CONTRACT["goal"] + " And also something else.")
+        self.contract.write_text(json.dumps(changed), encoding="utf-8")
+        code, _, err = run(*self.args("--dry-run", "--run-id", "run-frozen"))
+        self.assertEqual(code, flow.EXIT_USAGE)
+        self.assertIn("a different contract", err)
+
+    def test_resuming_against_a_different_base_is_refused(self) -> None:
+        run(*self.args("--dry-run", "--run-id", "run-based"))
+        self.repo.write("src/example/other.py", "X = 1\n")
+        moved = self.repo.commit("move the base")
+        code, _, err = run(
+            *self.args("--dry-run", "--run-id", "run-based", "--base", moved)
+        )
+        self.assertEqual(code, flow.EXIT_USAGE)
+        self.assertIn("base", err)
+
+    def test_resuming_with_a_different_flow_is_refused(self) -> None:
+        run(*self.args("--dry-run", "--run-id", "run-flow"))
+        code, _, err = run(
+            "assure",
+            "--contract",
+            str(self.contract),
+            "--worktree",
+            str(self.repo.path),
+            "--runs",
+            str(self.repo.path / "runs"),
+            "--dry-run",
+            "--run-id",
+            "run-flow",
+        )
+        self.assertEqual(code, flow.EXIT_USAGE)
+        self.assertIn("flow", err)
+
     def test_an_invalid_contract_is_refused_before_anything_runs(self) -> None:
         broken = dict(CONTRACT)
         broken.pop("verification")

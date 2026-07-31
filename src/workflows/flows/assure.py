@@ -113,5 +113,4 @@ def _verdict(
         candidate=candidate,
         extra_non_claims=extra_non_claims,
     )
-    context.run.write_artifact("verdict.json", document)
-    return document
+    return base.write_verdict(context, document)

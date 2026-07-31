@@ -145,6 +145,41 @@ class RunDirectoryTest(unittest.TestCase):
         self.assertTrue((self.run.gates / "gates-pre" / "base_identity.1.json").is_file())
         self.assertTrue((self.run.gates / "gates-post-r0" / "base_identity.1.json").is_file())
 
+    def test_a_transient_file_lock_does_not_lose_the_manifest(self) -> None:
+        """Windows hands out PermissionError for a few milliseconds when an
+        indexer or a scanner holds the target. Losing the manifest to that
+        would make the run unresumable."""
+        from unittest import mock
+
+        real = runs.os.replace
+        attempts: list[int] = []
+
+        def flaky(source, target):
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise PermissionError("access is denied")
+            return real(source, target)
+
+        with mock.patch.object(runs, "REPLACE_BACKOFF_SECONDS", 0), mock.patch.object(
+            runs.os, "replace", side_effect=flaky
+        ):
+            self.run.record_step(
+                {"step_id": "s", "kind": "gate", "state": "PENDING", "attempt": 1}, now=NOW
+            )
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual(self.run.read_manifest()["steps"][0]["step_id"], "s")
+
+    def test_a_persistent_lock_fails_loudly(self) -> None:
+        from unittest import mock
+
+        with mock.patch.object(runs, "REPLACE_BACKOFF_SECONDS", 0), mock.patch.object(
+            runs.os, "replace", side_effect=PermissionError("access is denied")
+        ):
+            with self.assertRaises(PermissionError):
+                self.run.record_step(
+                    {"step_id": "s", "kind": "gate", "state": "PENDING", "attempt": 1}
+                )
+
     def test_no_temporary_file_survives_a_manifest_write(self) -> None:
         self.run.record_step({"step_id": "s", "kind": "gate", "state": "PENDING", "attempt": 1})
         leftovers = list(self.run.root.glob("*.tmp"))

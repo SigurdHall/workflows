@@ -132,6 +132,21 @@ def changes(worktree: Path | str, base: str) -> list[Change]:
     return sorted(found, key=lambda change: (change.path, change.status))
 
 
+def add_worktree(repo: Path | str, path: Path | str, commit: str) -> None:
+    """Create a detached worktree at ``commit``.
+
+    Worktree creation writes to the repository's refs, so callers create them
+    one at a time: parallel creation is how you meet `packed-refs.lock`.
+    """
+    run(repo, "worktree", "add", "--detach", "--quiet", str(path), commit)
+
+
+def remove_worktree(repo: Path | str, path: Path | str) -> None:
+    """Remove a worktree, tolerating one that is already gone."""
+    run(repo, "worktree", "remove", "--force", str(path), check=False)
+    run(repo, "worktree", "prune", check=False)
+
+
 def files_at(worktree: Path | str, rev: str) -> list[str]:
     output = run(worktree, "ls-tree", "-r", "--name-only", "-z", rev).stdout
     return [path for path in output.split("\0") if path]

@@ -116,6 +116,7 @@ class GateContext:
 
     worktree: Path
     base: str
+    dry_run: bool = False
     require_clean: bool = True
     documents: tuple[DocumentRef, ...] = ()
     registry: SchemaRegistry | None = None
@@ -379,6 +380,65 @@ def protected_hash(contract: dict[str, Any], context: GateContext) -> GateResult
         now,
         detail=f"{len(protected_at_base)} protected file(s) byte-identical to the base",
         evidence=tuple(evidence),
+    )
+
+
+def candidate_changed(contract: dict[str, Any], context: GateContext) -> GateResult:
+    """The candidate differs from the base at all.
+
+    A producing step that changed nothing has not done the task, and every
+    other gate passes an empty candidate trivially: nothing is out of scope,
+    no protected file moved, and the base's own verification still exits
+    zero. Vacuous success is defect class 3 in the taxonomy; a flow that can
+    report PASS for an untouched worktree is an instance of it.
+    """
+    now = context.now()
+    if context.dry_run:
+        return GateResult(
+            "candidate_changed",
+            "NOT_RUN",
+            "not_applicable",
+            now,
+            detail="a dry run calls no model, so there is no candidate to compare",
+            non_claims=(
+                "Nothing was produced in this run, so this gate checked nothing.",
+            ),
+        )
+    changes = gitcmd.changes(context.worktree, context.base)
+    evidence = (
+        Evidence(
+            "candidate/diff-summary",
+            "command",
+            f"git diff --name-status {context.base} (plus untracked)",
+            excerpt="\n".join(f"{c.status}\t{c.path}" for c in changes) or "no changes",
+        ),
+    )
+    if not changes:
+        return GateResult(
+            "candidate_changed",
+            "FAIL",
+            "empty_candidate",
+            now,
+            detail="the worktree is byte-identical to the frozen base",
+            evidence=evidence,
+            findings=(
+                _finding(
+                    "candidate-empty",
+                    "HIGH",
+                    "The candidate is identical to the base: nothing was produced.",
+                    "Produce a candidate, or stop the flow — an unchanged "
+                    "worktree passes every other gate for free.",
+                    ["candidate/diff-summary"],
+                ),
+            ),
+        )
+    return GateResult(
+        "candidate_changed",
+        "PASS",
+        "clean",
+        now,
+        detail=f"{len(changes)} changed path(s)",
+        evidence=evidence,
     )
 
 
@@ -755,6 +815,7 @@ def _unresolved_references(document: Path, worktree: Path) -> list[str]:
 
 GATES: dict[str, Callable[[dict[str, Any], GateContext], GateResult]] = {
     "base_identity": base_identity,
+    "candidate_changed": candidate_changed,
     "scope": scope,
     "protected_hash": protected_hash,
     "verification_command": verification_command,

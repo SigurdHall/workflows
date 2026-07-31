@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from workflows import gitcmd
-from workflows.flows import assure, base, implement
+from workflows.flows import assure, base, fanout, implement
 from workflows.flows.base import FlowContext, FlowError, Profile
 from workflows.flows.ladder import Escalation
 from workflows.runners.codex import CodexRunner, DryRunner
@@ -32,7 +32,7 @@ EXIT_OK = 0
 EXIT_VERDICT_FAILED = 1
 EXIT_USAGE = 2
 
-RUNNABLE = {"implement": implement.run, "assure": assure.run}
+RUNNABLE = {"implement": implement.run, "assure": assure.run, "fanout": fanout.run}
 
 CONTRACT_SCHEMAS = {
     "task": "task-contract.schema.json",
@@ -78,6 +78,34 @@ def _check_run_directory_is_invisible(runs: Path, worktree: Path) -> None:
         )
 
 
+def _check_resume_matches(
+    manifest: dict[str, Any], flow: str, digest: str, base_commit: str
+) -> None:
+    """A resume continues the run it says it continues.
+
+    A contract is frozen at run start; changing it mid-run is a new run. Left
+    unchecked, a resume runs gates and prompts against a different contract
+    while every envelope stays stamped with the original one — an audit trail
+    that lies about which contract governed the work.
+    """
+    recorded_digest = manifest.get("contract_ref", {}).get("digest")
+    recorded_base = (manifest.get("base") or [{}])[0].get("commit")
+    recorded_flow = manifest.get("flow")
+    problems = []
+    if recorded_flow and recorded_flow != flow:
+        problems.append(f"flow {recorded_flow!r}, not {flow!r}")
+    if recorded_digest and recorded_digest != digest:
+        problems.append("a different contract (the digest does not match)")
+    if recorded_base and recorded_base != base_commit:
+        problems.append(f"base {recorded_base[:12]}, not {base_commit[:12]}")
+    if problems:
+        raise FlowError(
+            "this run was created against " + "; ".join(problems) + ". "
+            "A contract and a base are frozen at run start: continue with the "
+            "originals, or start a new run id."
+        )
+
+
 def build_context(args: argparse.Namespace) -> FlowContext:
     registry = default_registry()
     contract = load_contract(args.contract)
@@ -118,6 +146,7 @@ def build_context(args: argparse.Namespace) -> FlowContext:
         )
 
     manifest = run_directory.read_manifest()
+    _check_resume_matches(manifest, args.flow, contract_digest(args.contract), frozen)
     return FlowContext(
         contract=contract,
         contract_ref=manifest["contract_ref"],
@@ -134,6 +163,7 @@ def build_context(args: argparse.Namespace) -> FlowContext:
         review_lenses=tuple(args.review_lens),
         focus_hint=args.focus_hint,
         allow_reset=not args.no_reset,
+        max_parallel_workers=args.max_parallel_workers,
     )
 
 
@@ -152,6 +182,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--review-lens", action="append", default=[])
     parser.add_argument("--focus-hint", default=None)
     parser.add_argument("--max-repair-rounds", type=int, default=2)
+    parser.add_argument(
+        "--max-parallel-workers",
+        type=int,
+        default=1,
+        help="fan-out concurrency; workers always get their own worktree",
+    )
     parser.add_argument("--no-reset", action="store_true", help="never reset the worktree")
     parser.add_argument(
         "--dry-run",

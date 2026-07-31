@@ -91,9 +91,12 @@ class FlowContext:
     lens_directory: Path | None = None
     clock: Callable[[], str] = utc_now
     allow_reset: bool = True
+    max_parallel_workers: int = 1
+    worker_worktrees: Path | None = None
     pre_gates: tuple[str, ...] = ("base_identity", "verification_command")
     post_gates: tuple[str, ...] = (
         "base_identity",
+        "candidate_changed",
         "scope",
         "protected_hash",
         "verification_command",
@@ -114,6 +117,7 @@ class FlowContext:
         settings: dict[str, Any] = {
             "worktree": self.worktree,
             "base": self.base,
+            "dry_run": self.dry_run,
             "registry": self.schemas(),
             "clock": self.clock,
         }
@@ -172,6 +176,50 @@ def reset_to_base(context: FlowContext) -> None:
 # --------------------------------------------------------------------------
 
 
+def envelope_path(step_id: str) -> str:
+    return f"envelopes/{step_id}.json"
+
+
+def adopt_written_envelope(
+    context: FlowContext, step_id: str, kind: str, *, attempt: int = 1
+) -> dict[str, Any] | None:
+    """Recover a step whose envelope reached disk before its manifest record.
+
+    A process killed in the window between writing the envelope and recording
+    COMPLETED leaves a run whose manifest says RUNNING and whose result is
+    already on disk. Trusting the manifest alone there re-invokes a model that
+    already answered — and, for a repair step, resets the worktree first,
+    destroying work that was done. The artifact is the evidence; the manifest
+    is the index. When they disagree, the artifact wins.
+    """
+    relative = envelope_path(step_id)
+    if not (context.run.root / relative).is_file():
+        return None
+    envelope = context.run.read_artifact(relative)
+    now = context.now()
+    context.run.record_step(
+        {
+            "step_id": step_id,
+            "kind": kind,
+            "state": "COMPLETED" if envelope.get("status") == "COMPLETED" else "FAILED",
+            "attempt": attempt,
+            "finished_at": now,
+            "envelope_path": relative,
+            "note": "adopted an envelope written before the run was interrupted",
+        },
+        now=now,
+    )
+    return envelope
+
+
+def already_produced(context: FlowContext, step_id: str) -> bool:
+    """True when this step's result exists, however the manifest reads."""
+    recorded = context.run.step(step_id)
+    if recorded is not None and recorded.get("state") == "COMPLETED":
+        return True
+    return (context.run.root / envelope_path(step_id)).is_file()
+
+
 def step(
     context: FlowContext,
     step_id: str,
@@ -190,6 +238,10 @@ def step(
     if recorded is not None and recorded.get("state") == "COMPLETED":
         return context.run.read_artifact(recorded["envelope_path"])
 
+    adopted = adopt_written_envelope(context, step_id, kind, attempt=attempt)
+    if adopted is not None:
+        return adopted
+
     started = context.now()
     context.run.record_step(
         {
@@ -204,7 +256,7 @@ def step(
     )
 
     envelope = produce()
-    relative = f"envelopes/{step_id}.json"
+    relative = envelope_path(step_id)
     context.run.write_artifact(relative, envelope)
     finished = context.now()
     context.run.record_step(
@@ -338,7 +390,10 @@ def work_envelope(
         "step_kind": kind,
         "status": "COMPLETED",
         "terminal": True,
-        "result": "PASS",
+        # A producer evaluates no criterion. Reporting PASS here would be a
+        # producer grading its own work, which is what the gates and the
+        # ladder exist to replace.
+        "result": "NOT_RUN",
         "dry_run": context.dry_run,
         "produced_at": context.now(),
         "contract_ref": context.contract_ref,
@@ -429,7 +484,24 @@ def review_result_validator(
             ladder_level=ladder_level,
             candidate=None,
         )
-        return semantic_errors(envelope, ENVELOPE_SCHEMA)
+        errors = list(semantic_errors(envelope, ENVELOPE_SCHEMA))
+        # A reviewer reports what it found; it does not decide what to do
+        # about it. Without this, a review can raise a CRITICAL finding,
+        # mark it ACCEPTED_RISK itself, and return PASS — the model under
+        # judgment clearing its own worst finding, which is the whole
+        # premise of an independent ladder undone in one field.
+        for index, finding in enumerate(output.get("findings", [])):
+            if finding.get("status") != "OPEN":
+                errors.append(
+                    ValidationError(
+                        f"/findings/{index}/status",
+                        "semantic:review_may_not_dispose_of_its_own_finding",
+                        "a review reports findings as OPEN; accepting or "
+                        "withdrawing one is a later decision by a different "
+                        "step or a human",
+                    )
+                )
+        return errors
 
     return validate
 
@@ -497,10 +569,18 @@ def verdict(
             )
 
     extra_non_claims = list(extra_non_claims)
-    if context.dry_run and result == "PASS":
-        # A dry run calls no model. Whatever the stubs said, nothing was
-        # judged, so a dry run may never report a PASS.
-        result = "INCONCLUSIVE"
+    if context.dry_run and result in ("PASS", "FAIL"):
+        # A dry run calls no model, so it concludes nothing — in either
+        # direction. The one real signal a dry run carries is a gate finding,
+        # because gates do run; without one, the verdict is INCONCLUSIVE.
+        real = [
+            finding
+            for envelope in envelopes
+            for finding in envelope.get("findings", [])
+            if finding.get("status") == "OPEN"
+        ]
+        if not real:
+            result = "INCONCLUSIVE"
         extra_non_claims.insert(
             0,
             "Dry run: prompts, gates and the manifest were materialized and no "
@@ -526,6 +606,20 @@ def verdict(
     if candidate is not None:
         document["candidate"] = candidate
     return _dedupe_non_claims(document)
+
+
+def write_verdict(context: FlowContext, document: dict[str, Any]) -> dict[str, Any]:
+    """Record the verdict, or return the one this run already reached.
+
+    A verdict is terminal. Re-running a finished run replays nothing and must
+    not re-decide it: the recorded verdict is the run's decision, and a second
+    one differing only by its timestamp would be a rewritten audit trail.
+    """
+    relative = "verdict.json"
+    if (context.run.root / relative).is_file():
+        return context.run.read_artifact(relative)
+    context.run.write_artifact(relative, document)
+    return document
 
 
 def validate_document(

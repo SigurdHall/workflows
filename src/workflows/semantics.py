@@ -131,9 +131,17 @@ def _pass_integrity(document: dict[str, Any]) -> Iterator[ValidationError]:
     # still say PASS unless this is checked. NOT_RUN stays allowed — a gate
     # with nothing to check is legitimate — but it must be named in
     # non_claims, which is what the gate runner does.
+    outcomes = document.get("criterion_results", [])
+    if not outcomes:
+        yield _error(
+            "/criterion_results",
+            "pass_without_criteria",
+            "PASS while no criterion was evaluated: a judgment about nothing "
+            "is the vacuous-success shape",
+        )
     unmet = [
         (index, outcome.get("result"))
-        for index, outcome in enumerate(document.get("criterion_results", []))
+        for index, outcome in enumerate(outcomes)
         if outcome.get("result") in ("FAIL", "INCONCLUSIVE")
     ]
     if unmet:

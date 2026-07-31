@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -40,11 +42,37 @@ def _dumps(document: Any) -> str:
     return json.dumps(document, indent=2, sort_keys=False, ensure_ascii=False) + "\n"
 
 
+REPLACE_ATTEMPTS = 10
+REPLACE_BACKOFF_SECONDS = 0.05
+
+
+def _replace_with_retry(temporary: Path, target: Path) -> None:
+    """Atomic rename, retried against transient file locks.
+
+    On Windows an indexer, a virus scanner or an open editor can hold a
+    handle on the target for a few milliseconds and turn the rename into
+    ``PermissionError``. Losing a run's manifest to that would make the run
+    unresumable, so the rename retries briefly and then gives up loudly.
+    """
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            os.replace(temporary, target)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(REPLACE_BACKOFF_SECONDS * (attempt + 1))
+
+
 class RunDirectory:
     """One run's directory on disk."""
 
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root)
+        # Fan-out runs several workers at once against one run directory. The
+        # manifest is read-modify-write, so it is the one thing that must not
+        # be touched concurrently.
+        self._lock = threading.RLock()
 
     @property
     def manifest_path(self) -> Path:
@@ -84,26 +112,28 @@ class RunDirectory:
     def write_artifact(self, relative: str | Path, document: Any) -> Path:
         path = self.root / relative
         payload = _dumps(document)
-        if path.exists():
-            existing = path.read_text(encoding="utf-8")
-            if existing == payload:
-                return path  # idempotent re-entry
-            raise RunError(
-                f"refusing to rewrite an existing run artifact: {path}. "
-                "Run artifacts are append-only; a changed step writes a new "
-                "attempt, it does not overwrite the record of the old one."
-            )
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(payload, encoding="utf-8")
+        with self._lock:
+            if path.exists():
+                existing = path.read_text(encoding="utf-8")
+                if existing == payload:
+                    return path  # idempotent re-entry
+                raise RunError(
+                    f"refusing to rewrite an existing run artifact: {path}. "
+                    "Run artifacts are append-only; a changed step writes a new "
+                    "attempt, it does not overwrite the record of the old one."
+                )
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(payload, encoding="utf-8")
         return path
 
     def read_artifact(self, relative: str | Path) -> Any:
         return json.loads((self.root / relative).read_text(encoding="utf-8"))
 
     def append_telemetry(self, record: dict[str, Any]) -> None:
-        self.telemetry_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.telemetry_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        with self._lock:
+            self.telemetry_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.telemetry_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def telemetry(self) -> list[dict[str, Any]]:
         if not self.telemetry_path.is_file():
@@ -117,10 +147,11 @@ class RunDirectory:
         return json.loads(self.manifest_path.read_text(encoding="utf-8"))
 
     def write_manifest(self, manifest: dict[str, Any]) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
-        temporary = self.manifest_path.with_suffix(".json.tmp")
-        temporary.write_text(_dumps(manifest), encoding="utf-8")
-        os.replace(temporary, self.manifest_path)
+        with self._lock:
+            self.root.mkdir(parents=True, exist_ok=True)
+            temporary = self.manifest_path.with_suffix(".json.tmp")
+            temporary.write_text(_dumps(manifest), encoding="utf-8")
+            _replace_with_retry(temporary, self.manifest_path)
 
     def step(self, step_id: str) -> dict[str, Any] | None:
         for record in self.read_manifest().get("steps", []):
@@ -135,13 +166,14 @@ class RunDirectory:
 
     def record_step(self, step: dict[str, Any], *, now: str | None = None) -> None:
         """Insert or replace one step record and stamp the manifest."""
-        manifest = self.read_manifest()
-        steps = manifest.setdefault("steps", [])
-        for index, existing in enumerate(steps):
-            if existing.get("step_id") == step.get("step_id"):
-                steps[index] = {**existing, **step}
-                break
-        else:
-            steps.append(step)
-        manifest["updated_at"] = now or utc_now()
-        self.write_manifest(manifest)
+        with self._lock:
+            manifest = self.read_manifest()
+            steps = manifest.setdefault("steps", [])
+            for index, existing in enumerate(steps):
+                if existing.get("step_id") == step.get("step_id"):
+                    steps[index] = {**existing, **step}
+                    break
+            else:
+                steps.append(step)
+            manifest["updated_at"] = now or utc_now()
+            self.write_manifest(manifest)
