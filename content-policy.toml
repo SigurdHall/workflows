@@ -1,0 +1,25 @@
+# Generic content policy, enforced in CI by scripts/check_content_policy.py.
+# Private terms (organization names, hostnames, usernames) belong in the
+# gitignored .content-policy.local.toml, merged automatically when present.
+
+schema_version = "workflows.content-policy.v1"
+
+[[rules]]
+id = "user-absolute-path"
+description = "User-specific absolute paths must not be committed."
+pattern = '(?i)[A-Z]:\\Users\\[^\\\s"]+|/home/[a-z0-9_.-]+/|/Users/[a-z0-9_.-]+/'
+
+[[rules]]
+id = "email-address"
+description = "Email addresses must not be committed."
+pattern = '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+
+[[rules]]
+id = "credential-shaped"
+description = "Credential-shaped strings must not be committed."
+pattern = '(?i)(gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
+
+[[rules]]
+id = "secret-assignment"
+description = "Inline secret assignments must not be committed."
+pattern = "(?i)(api[_-]?key|secret|token|password)\\s*[:=]\\s*[\"'][^\"'\\s]{12,}[\"']"
