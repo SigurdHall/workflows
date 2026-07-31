@@ -1,5 +1,12 @@
 # Roadmap
 
+**Status: M0–M8 complete as of v0.1.0.** Every acceptance criterion below
+passes, CI is green, and a three-task program (two `implement`, one
+`fanout`) dry-runs end to end and resumes without repeating a completed
+flow. What that does and does not establish is stated in the README's
+Status section; every departure from this roadmap is in
+[deviations.md](deviations.md).
+
 Implementation milestones for v0. Each milestone lists acceptance
 criteria; a milestone is done when all criteria pass locally
 (`python -m unittest` + `python scripts/check_content_policy.py`) and in
