@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gate-result.schema.json",
+  "title": "Gate result",
+  "description": "The envelope fragment a deterministic check produces. Gate evidence and model evidence live in the same record, so a reviewer and a hash are read the same way. A gate always reports a result and a reason code: it may fail, but it may never be silently skipped.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "gate_id",
+    "result",
+    "reason_code",
+    "checked_at",
+    "evidence",
+    "findings",
+    "non_claims"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.gate-result.v1" },
+    "gate_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+    "result": { "$ref": "core.defs.schema.json#/$defs/criterion_result" },
+    "reason_code": { "$ref": "#/$defs/reason_code" },
+    "detail": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "checked_at": { "$ref": "core.defs.schema.json#/$defs/timestamp" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "evidence": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "core.defs.schema.json#/$defs/evidence_ref" }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "core.defs.schema.json#/$defs/finding" }
+    },
+    "non_claims": { "$ref": "core.defs.schema.json#/$defs/non_claims" }
+  },
+  "$defs": {
+    "reason_code": {
+      "title": "Gate reason code",
+      "description": "Why the gate reached its result, in machine-readable form. A missing command is 'command_not_found', never 'not_applicable' and never a pass — the distinction is the point.",
+      "type": "string",
+      "enum": [
+        "clean",
+        "out_of_scope_change",
+        "protected_modified",
+        "protected_deleted",
+        "protected_missing_at_base",
+        "base_mismatch",
+        "dirty_worktree",
+        "unknown_base",
+        "command_not_found",
+        "nonzero_exit",
+        "timeout",
+        "schema_invalid",
+        "missing_artifact",
+        "empty_artifact",
+        "unresolved_reference",
+        "requires_judgment",
+        "not_applicable"
+      ]
+    }
+  }
+}

@@ -80,19 +80,28 @@ prompts, and the run manifest without a single model call.
 ```
 concepts/          one page per concept (the seven above)
 contracts/         JSON Schemas: contracts, envelopes, verdicts, plans, run manifests
-src/workflows/     the package: schema validation, gates, runners, flows
-tests/             unittest suite and the annotated fixture corpus
-gates/             deterministic checks
-lenses/work/       producer perspectives
+lenses/work/       producer perspectives (one versioned file per lens)
 lenses/review/     reviewer attack perspectives
-runners/           runner interface + implementations (codex first, pluggable)
+src/workflows/     the implementation: schemas, gates, runners, flows, program
+tests/             unittest suite and the annotated fixture corpus
+examples/          generic example artifacts (a plan, a contract)
+gates/             what each gate checks and how it fails
+runners/           the runner interface and its invocation contract
 flows/             the five flows
 program/           the batch orchestrator
-scripts/           validators and repo tooling
+scripts/           repo tooling
 docs/decisions/    architecture decision records
 docs/roadmap.md    implementation milestones
+docs/deviations.md every departure from the roadmap, with its reason
 runs/              run artifacts (gitignored)
 ```
+
+Python lives in `src/workflows/` — one importable package, so a consuming
+repository installs it and runs the same gates and validators this
+repository runs. The `gates/`, `runners/`, `flows/` and `program/`
+directories carry the definitions and the documentation for those layers;
+`lenses/` carries the lens files themselves, which are data injected
+verbatim into prompts.
 
 ## Using the validator
 

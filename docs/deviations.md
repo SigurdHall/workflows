@@ -69,3 +69,36 @@ validator. The same category — obligations no schema keyword can express —
 covers evidence reference integrity, the negative-path probe rule, vacuous
 PASS, disjoint write scopes, and step-lifecycle consistency, so they are
 implemented together and reported through the same entry point.
+
+## M2
+
+**D-M2-1 — Python lives in `src/workflows/`; the top-level `gates/`,
+`flows/`, `runners/` and `program/` directories are documentation.** The
+README's original layout listed those directories next to `scripts/` as if
+they held code, while the M0 roadmap bullet mandates the package skeleton
+under `src/`. One importable package is what lets a consuming repository
+install this and run the same gates; the top-level directories keep the
+definitions and the catalogs. The README layout now says so, and
+`flows/README.md` was corrected.
+
+**D-M2-2 — A `gate-result.schema.json` was added, which the roadmap does
+not name.** The acceptance criterion says gate results must "validate
+against the envelope fragment schema", and no such schema existed. It adds
+a `reason_code` enum, which is what makes the charter's requirement
+checkable that a missing verification command "fails closed with a distinct
+reason" rather than being reported as skipped or green.
+
+**D-M2-3 — `src/workflows/runs.py` lands in M2, ahead of the M4 resume
+machinery.** The gate runner has to write results to the run directory, so
+the run directory has to exist. It implements the append-only artifact
+discipline and the atomically-rewritten manifest now; step scheduling and
+resume arrive with the flows.
+
+**D-M2-4 — The `evidence_obligations` gate reports `INCONCLUSIVE` for
+`number_traceable` and `manual_judgment` obligations.** Neither can be
+settled by a deterministic check, and reporting them as PASS or silently
+skipping them would let a goal be declared attained on the strength of
+gates alone. They come back `requires_judgment`, named individually in the
+result's non-claims. Whether `number_traceable` deserves a real
+deterministic implementation is deferred to M7, where `assure` goal mode
+consumes it.

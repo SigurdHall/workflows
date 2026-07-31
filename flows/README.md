@@ -11,7 +11,8 @@ Implementations of the five flows live here, one directory per flow:
 See `concepts/flow.md` for the shared anatomy every flow must follow, and
 `docs/roadmap.md` for implementation order and acceptance criteria.
 
-Flows are plain Python (3.12+, stdlib only) invoked as modules; they read
-contracts and lenses, call models only through `runners/`, run checks
-only through `gates/`, and write only to their run directory and their
-task worktree.
+Flows are plain Python (3.12+, stdlib only), implemented in
+`src/workflows/flows/` and invoked as modules. They read contracts and
+lenses, call models only through the runner interface, run checks only
+through the gates, and write only to their run directory and their task
+worktree.
