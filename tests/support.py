@@ -19,7 +19,7 @@ from workflows import semantics
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures"
-CONTRACTS_DIR = REPO_ROOT / "contracts"
+CONTRACTS_DIR = schema_mod.contracts_dir()
 
 FIXTURE_VERSION = "workflows.fixture.v1"
 _REQUIRED_KEYS = {"fixture_version", "schema", "expect", "reason", "data"}

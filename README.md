@@ -79,7 +79,7 @@ prompts, and the run manifest without a single model call.
 
 ```
 concepts/          one page per concept (the seven above)
-contracts/         JSON Schemas: contracts, envelopes, verdicts, plans, run manifests
+contracts/         the schema catalog (the files live in src/workflows/contracts/)
 lenses/work/       producer perspectives (one versioned file per lens)
 lenses/review/     reviewer attack perspectives
 src/workflows/     the implementation: schemas, gates, runners, flows, program

@@ -15,8 +15,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m unittest discover --verbose
 
-  # Proves the claim that a consuming repository can install this package and
-  # run the validator in its own CI unchanged — installed, not PYTHONPATH-set.
+  # Proves what a consuming repository actually does: build a wheel, install
+  # it somewhere else, and run the validator with no checkout in sight. An
+  # editable install from this directory would prove nothing — it resolves
+  # the schemas back to the source tree either way.
   cli:
     runs-on: ubuntu-latest
     steps:
@@ -24,8 +26,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e .
-      - run: python -m workflows.check plan.schema.json examples/plan.example.toml
+      - run: pip install build
+      - run: python -m build --wheel
+      - name: install the wheel into a clean environment elsewhere
+        run: |
+          mkdir -p "$RUNNER_TEMP/consumer"
+          cp examples/plan.example.toml "$RUNNER_TEMP/consumer/plan.toml"
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet dist/*.whl
+      - name: validate from the consuming directory
+        working-directory: ${{ runner.temp }}/consumer
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" -m workflows.check plan.schema.json plan.toml
+      - name: a violation must exit 1, not 0
+        working-directory: ${{ runner.temp }}/consumer
+        run: |
+          sed 's|src/report/\*\*|src/parser/lex.py|' plan.toml > overlap.toml
+          if "$RUNNER_TEMP/venv/bin/python" -m workflows.check plan.schema.json overlap.toml; then
+            echo "expected a nonzero exit for overlapping write scopes"; exit 1
+          fi
 
   content-policy:
     runs-on: ubuntu-latest

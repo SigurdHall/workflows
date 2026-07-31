@@ -110,6 +110,83 @@ class PlanRuleTest(unittest.TestCase):
         self.assertEqual(rules(self.plan, "plan.schema.json"), [])
 
 
+class ReviewRegressionTest(unittest.TestCase):
+    """Counter-examples an independent review of M1 found passing as clean."""
+
+    def test_a_wildcarded_protected_pattern_covering_an_allowed_path_is_caught(self) -> None:
+        contract = data("m1/valid/task-contract.json")
+        contract["scope"]["allowed_paths"] = ["docs/guide.md"]
+        contract["protected"] = ["*.md"]
+        self.assertIn(
+            ("/protected/0", "semantic:protected_inside_scope"),
+            rules(contract, "task-contract.schema.json"),
+        )
+
+    def test_overlap_is_checked_when_one_task_omits_the_repo_id(self) -> None:
+        plan = data("m1/valid/plan-three-tasks.json")
+        plan["tasks"][0].pop("repo_id")
+        plan["tasks"][1]["write_scope"] = plan["tasks"][0]["write_scope"]
+        self.assertIn(
+            ("/tasks/1/write_scope", "semantic:overlapping_write_scope"),
+            rules(plan, "plan.schema.json"),
+        )
+
+    def test_scopes_differing_only_in_case_are_treated_as_overlapping(self) -> None:
+        plan = data("m1/valid/plan-three-tasks.json")
+        plan["tasks"][1]["write_scope"] = ["Src/parser/**"]
+        self.assertIn(
+            ("/tasks/1/write_scope", "semantic:overlapping_write_scope"),
+            rules(plan, "plan.schema.json"),
+        )
+
+    def test_pass_with_a_failing_criterion_and_no_findings_is_caught(self) -> None:
+        for schema in ("envelope.schema.json", "verdict.schema.json"):
+            with self.subTest(schema=schema):
+                document = data(
+                    "m1/valid/envelope-review.json"
+                    if schema == "envelope.schema.json"
+                    else "m1/valid/verdict-fail.json"
+                )
+                document["result"] = "PASS"
+                document["findings"] = []
+                document["criterion_results"] = [
+                    {
+                        "criterion_id": "AC-1",
+                        "result": "FAIL",
+                        "evidence_refs": ["cmd-verification"],
+                        "negative_path_claim": False,
+                    }
+                ]
+                self.assertIn(
+                    ("/result", "semantic:pass_with_unmet_criterion"),
+                    rules(document, schema),
+                )
+
+    def test_pass_with_an_inconclusive_criterion_is_caught(self) -> None:
+        document = data("m1/valid/envelope-review.json")
+        document["result"] = "PASS"
+        document["findings"] = []
+        document["criterion_results"][1]["result"] = "INCONCLUSIVE"
+        self.assertIn(
+            ("/result", "semantic:pass_with_unmet_criterion"),
+            rules(document, "envelope.schema.json"),
+        )
+
+    def test_pass_with_a_not_run_criterion_stays_allowed(self) -> None:
+        # A gate with nothing to check is legitimate; the runner names it in
+        # non_claims rather than pretending it ran.
+        document = data("m1/valid/envelope-review.json")
+        document["result"] = "PASS"
+        document["findings"] = []
+        document["criterion_results"][1] = {
+            "criterion_id": "AC-2",
+            "result": "NOT_RUN",
+            "evidence_refs": [],
+            "negative_path_claim": False,
+        }
+        self.assertEqual(rules(document, "envelope.schema.json"), [])
+
+
 class ContractRuleTest(unittest.TestCase):
     def test_goal_contract_duplicate_ids(self) -> None:
         contract = data("m1/valid/goal-contract.json")

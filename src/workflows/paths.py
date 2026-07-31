@@ -48,11 +48,31 @@ def compile_pattern(pattern: str) -> re.Pattern[str]:
         if token == "**":
             parts.append(".+" if last else "(?:[^/]+/)*")
             continue
-        segment = "".join(
-            "[^/]*" if char == "*" else re.escape(char) for char in token
-        )
-        parts.append(segment if last else segment + "/")
+        parts.append(_segment(token) if last else _segment(token) + "/")
     return re.compile("^" + "".join(parts) + "$")
+
+
+def _segment(token: str) -> str:
+    """Translate one path segment. ``**`` crosses separators wherever it sits.
+
+    ``src/vendor-**`` reads as "everything under src/vendor-*", and it now
+    behaves that way. Treating ``**`` as recursive only when it is a whole
+    segment made that pattern quietly protect one directory entry and
+    nothing beneath it.
+    """
+    out: list[str] = []
+    index = 0
+    while index < len(token):
+        if token.startswith("**", index):
+            out.append(".*")
+            index += 2
+        elif token[index] == "*":
+            out.append("[^/]*")
+            index += 1
+        else:
+            out.append(re.escape(token[index]))
+            index += 1
+    return "".join(out)
 
 
 def matches(pattern: str, path: str) -> bool:
@@ -79,7 +99,14 @@ def overlaps(left: str, right: str) -> bool:
 
     Exact intersection of two wildcard patterns is not decidable cheaply, so
     anything the literal prefixes cannot separate counts as an overlap.
+
+    Comparison folds case, unlike :func:`matches`. Git paths are
+    case-sensitive but Windows and macOS filesystems are not, so two scopes
+    differing only in case can name the same file on the machine a flow runs
+    on. Reporting them as overlapping is the conservative direction; matching
+    stays exact, because that is what git actually reports.
     """
+    left, right = left.lower(), right.lower()
     if matches(left, right) or matches(right, left):
         return True
     a, b = literal_prefix(left), literal_prefix(right)

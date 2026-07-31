@@ -35,6 +35,13 @@ class MatchTest(unittest.TestCase):
         self.assertTrue(paths.matches("src/**/test_*.py", "src/pkg/deep/test_a.py"))
         self.assertFalse(paths.matches("src/**/test_*.py", "src/pkg/a.py"))
 
+    def test_double_star_inside_a_segment_is_still_recursive(self) -> None:
+        # A protected pattern like src/vendor-** must not quietly protect one
+        # directory entry and nothing beneath it.
+        self.assertTrue(paths.matches("src/vendor-**", "src/vendor-lib"))
+        self.assertTrue(paths.matches("src/vendor-**", "src/vendor-lib/deep/file.py"))
+        self.assertFalse(paths.matches("src/vendor-**", "src/other/file.py"))
+
     def test_trailing_slash_means_everything_under(self) -> None:
         self.assertTrue(paths.matches("src/", "src/main.py"))
         self.assertFalse(paths.matches("src/", "src"))
@@ -63,6 +70,17 @@ class OverlapTest(unittest.TestCase):
         # Conservative by design: a false overlap costs an edit, a false
         # disjointness costs two flows writing the same file.
         self.assertTrue(paths.overlaps("*.md", "docs/**"))
+
+    def test_case_only_differences_are_treated_as_overlapping(self) -> None:
+        # Git paths are case-sensitive; Windows and macOS filesystems are not.
+        # Two scopes differing only in case can name the same file on the
+        # machine a flow actually runs on.
+        self.assertTrue(paths.overlaps("Docs/report.md", "docs/report.md"))
+        self.assertTrue(paths.overlaps("SRC/parser/**", "src/parser/lex.py"))
+
+    def test_matching_stays_case_sensitive(self) -> None:
+        # Matching mirrors what git reports, which is exact.
+        self.assertFalse(paths.matches("docs/report.md", "Docs/report.md"))
 
     def test_literal_prefix(self) -> None:
         self.assertEqual(paths.literal_prefix("src/parser/**"), ["src", "parser"])

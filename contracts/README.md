@@ -5,6 +5,13 @@ verdicts, plans, and run manifests. Draft 2020-12, closed
 (`additionalProperties: false`), `schema_version` as a `const` per
 document, digests as `sha256:` plus 64 lowercase hex characters.
 
+**The schema files live in [`src/workflows/contracts/`](../src/workflows/contracts/)**,
+inside the package. They are data the validator needs, not documentation:
+a built wheel that shipped only the Python modules would install a
+validator with an empty registry — a gate that cannot check anything. This
+page is the catalog; `WORKFLOWS_CONTRACTS_DIR` points the validator
+somewhere else when a consuming repository has its own.
+
 - `core.defs.schema.json` — shared `$defs` referenced by every other
   schema as `core.defs.schema.json#/$defs/<name>`. It defines identity,
   digests, timestamps, the status/result/severity enums, the finding and

@@ -44,7 +44,10 @@ EXIT_USAGE = 2
 
 
 def load_document(path: Path) -> Any:
-    text = path.read_text(encoding="utf-8")
+    # utf-8-sig, not utf-8: a byte order mark is what Windows editors and a
+    # plain PowerShell redirection produce, and a document is not malformed
+    # for carrying one.
+    text = path.read_text(encoding="utf-8-sig")
     if path.suffix.lower() == ".toml":
         return tomllib.loads(text)
     return json.loads(text)

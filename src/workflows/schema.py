@@ -121,15 +121,20 @@ class SchemaRegistry:
 
 
 def contracts_dir() -> Path:
-    """Directory holding this repository's schema documents.
+    """Directory holding the schema documents.
 
-    ``WORKFLOWS_CONTRACTS_DIR`` overrides it so consuming repositories can
-    point the validator at their own copy.
+    The schemas ship *inside* the package. An installed wheel that carried
+    only the Python modules would leave every consumer with an empty
+    registry, which is a validator that validates nothing — so the data
+    lives where the code lives.
+
+    ``WORKFLOWS_CONTRACTS_DIR`` overrides it so a consuming repository can
+    point the validator at its own schemas.
     """
     override = os.environ.get("WORKFLOWS_CONTRACTS_DIR")
     if override:
         return Path(override)
-    return Path(__file__).resolve().parents[2] / "contracts"
+    return Path(__file__).resolve().parent / "contracts"
 
 
 @lru_cache(maxsize=None)

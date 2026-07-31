@@ -126,6 +126,24 @@ def _pass_integrity(document: dict[str, Any]) -> Iterator[ValidationError]:
             + ", ".join(str(index) for index in blocking)
             + " are OPEN at CRITICAL or HIGH severity",
         )
+    # A PASS is a claim about the criteria, not only about the findings: a
+    # document can report every criterion FAIL, carry no finding at all, and
+    # still say PASS unless this is checked. NOT_RUN stays allowed — a gate
+    # with nothing to check is legitimate — but it must be named in
+    # non_claims, which is what the gate runner does.
+    unmet = [
+        (index, outcome.get("result"))
+        for index, outcome in enumerate(document.get("criterion_results", []))
+        if outcome.get("result") in ("FAIL", "INCONCLUSIVE")
+    ]
+    if unmet:
+        yield _error(
+            "/result",
+            "pass_with_unmet_criterion",
+            "PASS while criteria "
+            + ", ".join(f"{index} ({result})" for index, result in unmet)
+            + " did not pass",
+        )
 
 
 def _dry_run_consistency(document: dict[str, Any]) -> Iterator[ValidationError]:
@@ -173,7 +191,11 @@ def _task_contract(document: dict[str, Any]) -> Iterator[ValidationError]:
     yield from _duplicates(document.get("acceptance", []), "id", "/acceptance", "duplicate_criterion_id")
     allowed = document.get("scope", {}).get("allowed_paths", [])
     for index, protected in enumerate(document.get("protected", [])):
-        if paths.matches_any(allowed, protected):
+        # Both sides are patterns. Asking whether the protected *string*
+        # matches an allowed pattern misses the common case where the
+        # protected side carries the wildcard: protected "*.md" against
+        # allowed "README.md" is a contradiction that reads as clean.
+        if any(paths.overlaps(pattern, protected) for pattern in allowed):
             yield _error(
                 f"/protected/{index}",
                 "protected_inside_scope",
@@ -237,10 +259,18 @@ def _plan(document: dict[str, Any]) -> Iterator[ValidationError]:
                 "buys redundancy, not coverage",
             )
 
+    # A single-base plan lets a task omit repo_id, so comparing the raw field
+    # would silently skip every pair where one task states it and the other
+    # does not — the exact pair a disjoint-scope rule exists to catch.
+    default_repo = bases[0].get("repo_id") if len(bases) == 1 else None
+
+    def repo_of(task: dict[str, Any]) -> Any:
+        return task.get("repo_id", default_repo) or default_repo
+
     for i, task in enumerate(tasks):
         for j in range(i + 1, len(tasks)):
             other = tasks[j]
-            if task.get("repo_id") != other.get("repo_id"):
+            if repo_of(task) != repo_of(other):
                 continue
             clash = next(
                 (

@@ -96,6 +96,13 @@ class CliTest(unittest.TestCase):
         self.assertEqual(code, check.EXIT_USAGE)
         self.assertIn("cannot read", err)
 
+    def test_a_byte_order_mark_does_not_make_a_document_unparseable(self) -> None:
+        path = self.tmp / "bom.json"
+        payload = json.dumps(fixture_data("m1/valid/envelope-review.json"))
+        path.write_bytes(b"\xef\xbb\xbf" + payload.encode("utf-8"))
+        code, out, err = run("envelope.schema.json", str(path))
+        self.assertEqual(code, check.EXIT_OK, out + err)
+
     def test_unparseable_json_exits_two(self) -> None:
         path = self.tmp / "broken.json"
         path.write_text("{not json", encoding="utf-8")

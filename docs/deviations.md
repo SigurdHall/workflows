@@ -70,6 +70,27 @@ covers evidence reference integrity, the negative-path probe rule, vacuous
 PASS, disjoint write scopes, and step-lifecycle consistency, so they are
 implemented together and reported through the same entry point.
 
+**D-M1-4 — `SchemaRegistry.add` compares schema *content*, not object
+identity, when deciding that a key is taken.** Registering the same document
+twice — which happens when the CLI is handed a path to a schema that is
+already in the registry — used to raise. Re-registering byte-identical
+content is now allowed; only genuinely conflicting content under one key
+raises. Found by an independent review, which noted that the change of an
+M0 behaviour was folded into the M1 commit without being logged.
+
+**D-M1-5 — The schema files moved from `contracts/` to
+`src/workflows/contracts/`.** The roadmap names `contracts/core.defs.schema.json`,
+and the top-level directory keeps the catalog page, but the files
+themselves had to move: a built wheel packaged only the Python modules, so
+an installed copy resolved an empty schema registry and validated nothing.
+An independent review demonstrated this by building a wheel and running the
+CLI from an unrelated directory. The CI job that claimed to prove
+cross-repository installability was installing editably from this checkout,
+which resolves the schemas back to the source tree and therefore proved
+nothing; it now builds a wheel, installs it into a separate virtual
+environment, and validates a document from a directory with no checkout in
+it — including a case that must exit nonzero.
+
 ## M2
 
 **D-M2-1 — Python lives in `src/workflows/`; the top-level `gates/`,

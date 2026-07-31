@@ -701,7 +701,7 @@ def _load_document(path: Path) -> Any:
     import json
     import tomllib
 
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     if path.suffix.lower() == ".toml":
         return tomllib.loads(text)
     return json.loads(text)
