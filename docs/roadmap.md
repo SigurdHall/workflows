@@ -149,4 +149,9 @@ hand-computed answer key.
 - Second runner (cross-family) → activates ladder level 4.
 - Goal-driven plan generation (ADR 0004, same checkpoint).
 - Pre-push hook installer for the local content policy.
+- Content-policy coverage of git metadata (author/committer identity, tag
+  and branch names), which the file-content scan cannot see — see the
+  known gap in ADR 0006.
 - Lens library growth driven by benchmark lens-yield data.
+
+Deviations from this roadmap are logged in [deviations.md](deviations.md).

@@ -26,6 +26,19 @@ not hoped for:
   for real work live in the consuming project; runs live in gitignored
   `runs/`.
 
+## Known gap
+
+`scripts/check_content_policy.py` scans the *content* of tracked files. It
+does not scan git metadata — author and committer names and email
+addresses, tag messages, or branch names — which are published with the
+repository and are outside every gate this repository currently owns.
+Committing from a machine whose git identity carries an organization
+domain therefore publishes that domain even when every file is clean.
+Recorded 2026-07-31, found by an independent review of milestone M0.
+Closing it is listed under post-v0 in the roadmap; until then, the git
+identity used for this repository is a manual precondition, not an
+enforced one.
+
 ## Consequences
 
 - Public-from-start forces the generalization that makes the workflows

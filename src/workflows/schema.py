@@ -102,6 +102,7 @@ class SchemaRegistry:
         keys = {k for k in (key, schema.get("$id")) if isinstance(k, str) and k}
         if not keys:
             raise SchemaError("a schema document needs an $id or an explicit key")
+        check_schema(schema, origin=sorted(keys)[0])
         for name in keys:
             existing = self._schemas.get(name)
             if existing is not None and existing is not schema:
@@ -132,13 +133,26 @@ def contracts_dir() -> Path:
 
 
 @lru_cache(maxsize=None)
-def _cached_registry(directory: str) -> SchemaRegistry:
-    return SchemaRegistry.from_directory(directory)
+def _document_sources(directory: str) -> tuple[tuple[str, str], ...]:
+    """Cache the raw text of each schema document, not the parsed objects."""
+    return tuple(
+        (path.name, path.read_text(encoding="utf-8"))
+        for path in sorted(Path(directory).glob("*.schema.json"))
+    )
 
 
 def default_registry() -> SchemaRegistry:
-    """Registry over :func:`contracts_dir`, cached per directory."""
-    return _cached_registry(str(contracts_dir()))
+    """A fresh registry over :func:`contracts_dir`.
+
+    Only the file text is cached. Every call parses its own schema objects,
+    so a caller that mutates a resolved schema cannot corrupt validation for
+    the rest of the process. Callers in hot paths build one registry and pass
+    it explicitly.
+    """
+    registry = SchemaRegistry()
+    for name, text in _document_sources(str(contracts_dir())):
+        registry.add(json.loads(text), key=name)
+    return registry
 
 
 def resolve_schema(
@@ -243,20 +257,128 @@ def _pointer(path: str, token: str | int) -> str:
     return f"{path}/{escaped}"
 
 
-def _compiled(pattern: Any) -> re.Pattern[str]:
+def _compiled(pattern: Any, where: str = "<inline>") -> re.Pattern[str]:
     if not isinstance(pattern, str):
-        raise SchemaError(f"pattern must be a string, got {pattern!r}")
+        raise SchemaError(f"pattern must be a string at {where}, got {pattern!r}")
     try:
         return re.compile(pattern)
     except re.error as exc:
-        raise SchemaError(f"invalid pattern {pattern!r}: {exc}") from exc
+        raise SchemaError(f"invalid pattern {pattern!r} at {where}: {exc}") from exc
 
 
-def _bound(schema: dict[str, Any], keyword: str) -> int | float:
-    value = schema[keyword]
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise SchemaError(f"{keyword} must be a number, got {value!r}")
-    return value
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _is_count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def check_schema(
+    schema: Any, *, origin: str = "<inline>", path: str = "", _depth: int = 0
+) -> None:
+    """Verify that a schema is well formed, independently of any instance.
+
+    Every supported keyword's *value* is checked here, recursively, including
+    branches no instance ever reaches. Without this, keyword shapes would only
+    be checked when an instance happened to have the matching JSON type — so a
+    schema with an empty ``enum`` or a non-boolean ``uniqueItems`` could sit in
+    ``contracts/`` for months and quietly enforce nothing.
+
+    Raises :class:`SchemaError`; returns None when the schema is sound.
+    """
+    where = f"{origin}{path or ''}" if path else origin
+    if _depth > MAX_DEPTH:
+        raise SchemaError(f"maximum schema nesting exceeded at {where}")
+    if not isinstance(schema, dict):
+        raise SchemaError(f"schema at {where} must be an object, got {_type_name(schema)}")
+
+    unknown = set(schema) - SUPPORTED_KEYWORDS - ANNOTATION_KEYWORDS
+    if unknown:
+        raise SchemaError(f"unsupported schema keyword(s) at {where}: {sorted(unknown)}")
+
+    if "$ref" in schema and not (
+        isinstance(schema["$ref"], str) and schema["$ref"]
+    ):
+        raise SchemaError(f"$ref must be a non-empty string at {where}")
+
+    if "type" in schema:
+        declared = schema["type"]
+        names = [declared] if isinstance(declared, str) else declared
+        if not isinstance(names, list) or not names:
+            raise SchemaError(f"type must be a string or a non-empty list at {where}")
+        for name in names:
+            if not isinstance(name, str) or name not in TYPE_NAMES:
+                raise SchemaError(f"unsupported type {name!r} at {where}")
+
+    if "enum" in schema:
+        if not isinstance(schema["enum"], list) or not schema["enum"]:
+            raise SchemaError(f"enum must be a non-empty list at {where}")
+
+    if "required" in schema:
+        required = schema["required"]
+        if not isinstance(required, list) or not all(
+            isinstance(name, str) for name in required
+        ):
+            raise SchemaError(f"required must be a list of strings at {where}")
+        if len(set(required)) != len(required):
+            raise SchemaError(f"required contains duplicates at {where}")
+
+    if "properties" in schema and not isinstance(schema["properties"], dict):
+        raise SchemaError(f"properties must be an object at {where}")
+
+    if "additionalProperties" in schema and not isinstance(
+        schema["additionalProperties"], (bool, dict)
+    ):
+        raise SchemaError(
+            f"additionalProperties must be a boolean or a schema at {where}"
+        )
+
+    if "pattern" in schema:
+        _compiled(schema["pattern"], where)
+
+    if "uniqueItems" in schema and not isinstance(schema["uniqueItems"], bool):
+        raise SchemaError(f"uniqueItems must be a boolean at {where}")
+
+    if "items" in schema and not isinstance(schema["items"], dict):
+        raise SchemaError(f"items must be a schema at {where}")
+
+    for keyword in ("minLength", "maxLength", "minItems", "maxItems"):
+        if keyword in schema and not _is_count(schema[keyword]):
+            raise SchemaError(
+                f"{keyword} must be a non-negative integer at {where}"
+            )
+    for keyword in ("minimum", "maximum"):
+        if keyword in schema and not _is_number(schema[keyword]):
+            raise SchemaError(f"{keyword} must be a number at {where}")
+
+    for low, high in (
+        ("minLength", "maxLength"),
+        ("minItems", "maxItems"),
+        ("minimum", "maximum"),
+    ):
+        if low in schema and high in schema and schema[low] > schema[high]:
+            raise SchemaError(
+                f"{low} exceeds {high} at {where}: the schema is unsatisfiable"
+            )
+
+    for name, child in (schema.get("$defs") or {}).items():
+        check_schema(child, origin=origin, path=f"{path}/$defs/{name}", _depth=_depth + 1)
+    for name, child in (schema.get("properties") or {}).items():
+        check_schema(
+            child, origin=origin, path=f"{path}/properties/{name}", _depth=_depth + 1
+        )
+    if "items" in schema:
+        check_schema(
+            schema["items"], origin=origin, path=f"{path}/items", _depth=_depth + 1
+        )
+    if isinstance(schema.get("additionalProperties"), dict):
+        check_schema(
+            schema["additionalProperties"],
+            origin=origin,
+            path=f"{path}/additionalProperties",
+            _depth=_depth + 1,
+        )
 
 
 def iter_errors(
@@ -275,16 +397,16 @@ def iter_errors(
     """
     if depth > MAX_DEPTH:
         raise SchemaError(f"maximum schema depth exceeded at {path or '/'}")
+    if depth == 0:
+        # Check the whole schema tree before looking at the instance, so that
+        # keyword shapes are verified even in branches this instance never
+        # reaches. Schemas resolved through a registry were checked when they
+        # were registered.
+        check_schema(schema)
     if not isinstance(schema, dict):
         raise SchemaError(f"schema at {path or '/'} must be an object")
     if document is None:
         document = schema
-
-    unknown = set(schema) - SUPPORTED_KEYWORDS - ANNOTATION_KEYWORDS
-    if unknown:
-        raise SchemaError(
-            f"unsupported schema keyword(s) at {path or '/'}: {sorted(unknown)}"
-        )
 
     if "$ref" in schema:
         target, target_document = _resolve_ref(schema["$ref"], document, registry)
@@ -300,17 +422,15 @@ def iter_errors(
     if "type" in schema:
         declared = schema["type"]
         names = [declared] if isinstance(declared, str) else declared
-        if not isinstance(names, list) or not names:
-            raise SchemaError(f"type must be a string or a non-empty list at {path or '/'}")
-        for name in names:
-            if not isinstance(name, str) or name not in TYPE_NAMES:
-                raise SchemaError(f"unsupported type {name!r} at {path or '/'}")
         if not any(_type_matches(instance, name) for name in names):
             yield ValidationError(
                 path,
                 "type",
                 f"expected {' or '.join(names)}, got {_type_name(instance)}",
             )
+            # One cause, one error: keywords below judge a value of the wrong
+            # type and would only add noise. Schema soundness was already
+            # established by check_schema, so nothing is skipped unchecked.
             return
 
     if "const" in schema and not json_equal(instance, schema["const"]):
@@ -318,33 +438,33 @@ def iter_errors(
             path, "const", f"must equal {json.dumps(schema['const'])}"
         )
 
-    if "enum" in schema:
-        options = schema["enum"]
-        if not isinstance(options, list) or not options:
-            raise SchemaError(f"enum must be a non-empty list at {path or '/'}")
-        if not any(json_equal(instance, option) for option in options):
-            yield ValidationError(
-                path, "enum", f"must be one of {json.dumps(options)}"
-            )
+    if "enum" in schema and not any(
+        json_equal(instance, option) for option in schema["enum"]
+    ):
+        yield ValidationError(
+            path, "enum", f"must be one of {json.dumps(schema['enum'])}"
+        )
 
     if isinstance(instance, str):
+        # JSON Schema semantics: pattern is a search, not a full match. Anchor
+        # patterns with ^ and $ when a whole-string constraint is meant.
         if "pattern" in schema and _compiled(schema["pattern"]).search(instance) is None:
             yield ValidationError(
                 path, "pattern", f"does not match {schema['pattern']!r}"
             )
-        if "minLength" in schema and len(instance) < _bound(schema, "minLength"):
+        if "minLength" in schema and len(instance) < schema["minLength"]:
             yield ValidationError(
                 path, "minLength", f"shorter than {schema['minLength']} characters"
             )
-        if "maxLength" in schema and len(instance) > _bound(schema, "maxLength"):
+        if "maxLength" in schema and len(instance) > schema["maxLength"]:
             yield ValidationError(
                 path, "maxLength", f"longer than {schema['maxLength']} characters"
             )
 
     if isinstance(instance, (int, float)) and not isinstance(instance, bool):
-        if "minimum" in schema and instance < _bound(schema, "minimum"):
+        if "minimum" in schema and instance < schema["minimum"]:
             yield ValidationError(path, "minimum", f"less than {schema['minimum']}")
-        if "maximum" in schema and instance > _bound(schema, "maximum"):
+        if "maximum" in schema and instance > schema["maximum"]:
             yield ValidationError(path, "maximum", f"greater than {schema['maximum']}")
 
     if isinstance(instance, list):
@@ -358,11 +478,11 @@ def iter_errors(
                     path=_pointer(path, index),
                     depth=depth + 1,
                 )
-        if "minItems" in schema and len(instance) < _bound(schema, "minItems"):
+        if "minItems" in schema and len(instance) < schema["minItems"]:
             yield ValidationError(
                 path, "minItems", f"fewer than {schema['minItems']} items"
             )
-        if "maxItems" in schema and len(instance) > _bound(schema, "maxItems"):
+        if "maxItems" in schema and len(instance) > schema["maxItems"]:
             yield ValidationError(
                 path, "maxItems", f"more than {schema['maxItems']} items"
             )
@@ -376,23 +496,12 @@ def iter_errors(
 
     if isinstance(instance, dict):
         properties = schema.get("properties", {})
-        if not isinstance(properties, dict):
-            raise SchemaError(f"properties must be an object at {path or '/'}")
-        required = schema.get("required", [])
-        if not isinstance(required, list) or not all(
-            isinstance(name, str) for name in required
-        ):
-            raise SchemaError(f"required must be a list of strings at {path or '/'}")
-        for name in required:
+        for name in schema.get("required", []):
             if name not in instance:
                 yield ValidationError(
                     _pointer(path, name), "required", "missing required property"
                 )
         additional = schema.get("additionalProperties")
-        if additional is not None and not isinstance(additional, (bool, dict)):
-            raise SchemaError(
-                f"additionalProperties must be a boolean or a schema at {path or '/'}"
-            )
         for key, value in instance.items():
             if key in properties:
                 yield from iter_errors(

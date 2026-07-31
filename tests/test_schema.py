@@ -56,6 +56,101 @@ class UnsupportedKeywordTest(unittest.TestCase):
             s.validate(1, True)  # type: ignore[arg-type]
 
 
+class SchemaSoundnessTest(unittest.TestCase):
+    """A malformed schema must raise for every instance, not only for one shape.
+
+    Regression tests for a review finding: keyword *shapes* used to be checked
+    inside the same ``isinstance`` guards as the instance checks, so a broken
+    schema validated cleanly whenever the instance happened to have a
+    different JSON type. The validator would then have been an instance of the
+    very defect class it exists to catch.
+    """
+
+    MALFORMED = [
+        {"required": "a"},
+        {"required": ["a", "a"]},
+        {"pattern": "["},
+        {"pattern": 7},
+        {"minLength": "two"},
+        {"maxLength": -1},
+        {"minItems": 1.5},
+        {"properties": "bad"},
+        {"additionalProperties": 5},
+        {"minimum": "zero"},
+        {"items": 5},
+        {"enum": []},
+        {"enum": "PASS"},
+        {"type": "int"},
+        {"type": []},
+        {"$ref": ""},
+        {"uniqueItems": 1},
+        {"uniqueItems": "true"},
+        {"uniqueItems": {"not": "a boolean"}},
+        {"minLength": 5, "maxLength": 2},
+        {"minItems": 5, "maxItems": 2},
+        {"minimum": 5, "maximum": 2},
+    ]
+
+    INSTANCES = [None, True, 0, 1.5, "x", [1, 1], {"a": 1}]
+
+    def test_malformed_schemas_raise_for_every_instance_type(self) -> None:
+        for schema in self.MALFORMED:
+            for instance in self.INSTANCES:
+                with self.subTest(schema=schema, instance=instance):
+                    with self.assertRaises(s.SchemaError):
+                        s.validate(instance, dict(schema))
+
+    def test_unvisited_branches_are_checked(self) -> None:
+        # No instance ever reaches these sub-schemas; they must still be sound.
+        for schema in (
+            {"type": "object", "properties": {"absent": {"oneOf": []}}},
+            {"type": "object", "properties": {"absent": {"enum": []}}},
+            {"type": "object", "additionalProperties": {"uniqueItems": "yes"}},
+            {"type": "array", "items": {"minimum": "zero"}},
+            {"$defs": {"unused": {"type": "nope"}}, "type": "string"},
+        ):
+            with self.subTest(schema=schema):
+                with self.assertRaises(s.SchemaError):
+                    s.validate({} if schema.get("type") == "object" else [], schema)
+
+    def test_unique_items_is_enforced_only_by_the_boolean_true(self) -> None:
+        self.assertEqual(errors([1, 1], {"type": "array", "uniqueItems": True}),
+                         [("", "uniqueItems")])
+        self.assertEqual(errors([1, 1], {"type": "array", "uniqueItems": False}), [])
+
+    def test_check_schema_accepts_the_repository_contracts(self) -> None:
+        registry = support.registry()
+        for key in registry.keys():
+            with self.subTest(schema=key):
+                s.check_schema(registry.get(key), origin=key)
+
+    def test_check_schema_names_the_offending_node(self) -> None:
+        with self.assertRaises(s.SchemaError) as ctx:
+            s.check_schema(
+                {"$defs": {"broken": {"enum": []}}}, origin="example.schema.json"
+            )
+        self.assertIn("example.schema.json/$defs/broken", str(ctx.exception))
+
+
+class RegistryIsolationTest(unittest.TestCase):
+    """A shared, mutable, process-wide registry would let one caller weaken
+    every later validation. Each default_registry() call parses its own copy.
+    """
+
+    def test_mutating_a_resolved_schema_does_not_leak(self) -> None:
+        first = s.default_registry()
+        self.assertIsNot(first, s.default_registry())
+        document = first.get("core.defs.schema.json")
+        document["$defs"]["digest"]["pattern"] = "^.*$"
+        fresh = s.default_registry().get("core.defs.schema.json")
+        self.assertEqual(fresh["$defs"]["digest"]["pattern"], "^sha256:[0-9a-f]{64}$")
+
+    def test_registration_rejects_an_unsound_document(self) -> None:
+        registry = s.SchemaRegistry()
+        with self.assertRaises(s.SchemaError):
+            registry.add({"$id": "broken.schema.json", "$defs": {"x": {"enum": []}}})
+
+
 class TypeTest(unittest.TestCase):
     def test_boolean_is_not_an_integer(self) -> None:
         self.assertEqual(errors(True, {"type": "integer"}), [("", "type")])
@@ -115,6 +210,15 @@ class StringAndNumberTest(unittest.TestCase):
         self.assertEqual(errors("a", schema), [("", "minLength")])
         self.assertEqual(errors("abcde", schema), [("", "maxLength")])
         self.assertEqual(errors("ABC", schema), [("", "pattern")])
+
+    def test_pattern_is_a_search_not_a_full_match(self) -> None:
+        # JSON Schema semantics, pinned deliberately: an unanchored pattern
+        # matches anywhere in the string. Contract authors must write ^...$.
+        self.assertEqual(errors("xxabcxx", {"type": "string", "pattern": "abc"}), [])
+        self.assertEqual(
+            errors("xxabcxx", {"type": "string", "pattern": "^abc$"}),
+            [("", "pattern")],
+        )
 
     def test_invalid_pattern_raises(self) -> None:
         with self.assertRaises(s.SchemaError):

@@ -16,7 +16,12 @@ Schemas are validated by `src/workflows/schema.py`, which implements the
 subset recorded in
 [ADR 0008](../docs/decisions/0008-minimal-internal-schema-validator.md)
 and raises on any keyword outside it. `tests/test_schema_conventions.py`
-enforces the conventions above across every document in this directory.
+enforces the draft, identity, closed-object, keyword-subset and
+`$ref`-resolvability conventions across every document here. The
+`schema_version`-as-`const` convention applies to instance documents;
+`core.defs.schema.json` is a `$defs` library with no instance form, so it
+carries the shared `schema_version` *pattern* instead and the `const`
+check applies from the M1 schemas onwards.
 
 Fixtures live in `tests/fixtures/` and are self-describing: each file
 names the schema it targets, whether it is expected to be valid or

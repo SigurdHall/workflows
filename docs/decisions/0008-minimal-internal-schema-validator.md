@@ -35,12 +35,23 @@ registry), `$defs`, `type` (including `integer` vs `number` vs `boolean`),
 
 Two properties make it a gate rather than a decoration:
 
-1. **Unsupported keywords raise, they are never ignored.** A schema using
-   `oneOf`, `if`/`then`, `format`, or `patternProperties` is a
-   `SchemaError` — loudly, at validation time, and in a repository-wide
-   convention test that walks every schema node including branches no
-   fixture exercises. A validator that silently skips a constraint would
-   report a pass it never checked.
+1. **Unsound schemas raise, they are never ignored.** `check_schema`
+   verifies the whole schema tree — keyword names *and* keyword value
+   shapes — before any instance is looked at, recursing through `$defs`,
+   `properties`, `items` and `additionalProperties` including branches no
+   instance ever reaches. It runs at every validation entry point and
+   again when a schema is registered. An unsupported keyword
+   (`oneOf`, `if`/`then`, `format`, `patternProperties`), an empty `enum`,
+   a non-boolean `uniqueItems`, an uncompilable `pattern`, or an
+   unsatisfiable bound pair is a `SchemaError`.
+
+   This is deliberately stricter than checking shapes lazily. An
+   independent review of milestone M0 found the lazy version: because each
+   keyword's shape was checked inside the same type guard as the instance
+   check, `{"uniqueItems": "true"}` enforced nothing and raised nothing,
+   and a malformed `required` was invisible to every test whose instance
+   was not an object. A gate that only fails for some instance shapes is
+   not a gate.
 2. **Comparison is JSON-typed.** `true` is never equal to `1` and never
    equal to `"true"`; `0` and `0.0` are equal, per JSON Schema numeric
    semantics. Type conflation is defect class 1 in the benchmark taxonomy;
