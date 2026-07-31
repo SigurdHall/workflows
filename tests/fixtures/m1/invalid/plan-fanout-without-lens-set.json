@@ -1,0 +1,72 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "plan.schema.json",
+  "expect": "invalid",
+  "reason": "Fan-out with one lens buys redundancy, not coverage.",
+  "expected_errors": [
+    {
+      "path": "/tasks/2/lens_set",
+      "keyword": "semantic:fanout_requires_lens_set"
+    }
+  ],
+  "data": {
+    "schema_version": "workflows.plan.v1",
+    "plan_id": "plan-0001",
+    "plan_revision": 1,
+    "description": "Three tasks with disjoint write scopes: two implement, one fanout.",
+    "base": [
+      {
+        "repo_id": "target",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "tasks": [
+      {
+        "task_id": "task-parser",
+        "repo_id": "target",
+        "contract_path": "contracts/task-parser.json",
+        "flow": "implement",
+        "write_scope": [
+          "src/parser/**"
+        ]
+      },
+      {
+        "task_id": "task-report",
+        "repo_id": "target",
+        "contract_path": "contracts/task-report.json",
+        "flow": "implement",
+        "write_scope": [
+          "src/report/**"
+        ]
+      },
+      {
+        "task_id": "task-canonical",
+        "repo_id": "target",
+        "contract_path": "contracts/task-canonical.json",
+        "flow": "fanout",
+        "write_scope": [
+          "src/canonical/**"
+        ],
+        "lens_set": [
+          "work/spec-fidelity"
+        ],
+        "focus_hint": "The digest must not change when the same set is reordered."
+      }
+    ],
+    "concurrency": {
+      "max_parallel_tasks": 3,
+      "max_parallel_workers": 5
+    },
+    "budgets": {
+      "tokens": 2000000,
+      "wall_clock_seconds": 5400
+    },
+    "escalation": {
+      "level_2_on_severity": "HIGH",
+      "level_3_on_conflict": true,
+      "stop_on_severity": "CRITICAL",
+      "max_repair_rounds": 2,
+      "dryness_rounds": 2
+    }
+  }
+}

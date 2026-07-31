@@ -1,0 +1,39 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "task-contract.schema.json",
+  "expect": "invalid",
+  "reason": "A contract without acceptance criteria has nothing for a reviewer to map evidence to.",
+  "expected_errors": [
+    {
+      "path": "/acceptance",
+      "keyword": "minItems"
+    }
+  ],
+  "data": {
+    "schema_version": "workflows.task-contract.v1",
+    "contract_id": "contract-alpha",
+    "contract_revision": 1,
+    "contract_type": "task",
+    "goal": "Reject step results that carry fields the contract does not declare, so that a producer cannot smuggle unvalidated data across a step boundary.",
+    "scope": {
+      "allowed_paths": [
+        "src/example/**",
+        "docs/example.md"
+      ]
+    },
+    "protected": [
+      "tests/**",
+      "contracts/**"
+    ],
+    "acceptance": [],
+    "verification": {
+      "command": [
+        "python",
+        "-m",
+        "unittest"
+      ],
+      "expect_exit_code": 0,
+      "timeout_seconds": 600
+    }
+  }
+}

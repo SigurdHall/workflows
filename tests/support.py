@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from workflows import schema as schema_mod
+from workflows import semantics
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures"
@@ -92,7 +93,12 @@ def registry() -> schema_mod.SchemaRegistry:
 
 
 def actual_errors(fixture: Fixture) -> list[tuple[str, str]]:
-    errors = schema_mod.validate_ref(
+    """Schema violations, or — when the schema is clean — semantic ones.
+
+    Fixtures annotate both the same way; semantic keywords carry a
+    ``semantic:`` prefix.
+    """
+    errors = semantics.check_document(
         fixture.data, fixture.schema_ref, registry=registry()
     )
     return sorted((error.path, error.keyword) for error in errors)

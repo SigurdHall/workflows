@@ -157,6 +157,108 @@
         "note": { "type": "string", "maxLength": 1000 }
       }
     },
+    "relative_path": {
+      "title": "Repository-relative path",
+      "description": "Absolute paths, drive letters, backslashes and parent-directory segments are rejected: a path that can escape the worktree is not a path a gate can reason about.",
+      "type": "string",
+      "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._][A-Za-z0-9._/-]*$",
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "path_pattern": {
+      "title": "Path pattern",
+      "description": "A repository-relative path, optionally with * and ** wildcards. Same escape rules as relative_path.",
+      "type": "string",
+      "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._*][A-Za-z0-9._/*-]*$",
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "git_commit": {
+      "title": "Git commit",
+      "description": "Full 40-character object name. Abbreviations are ambiguous and are not accepted as a frozen base.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "contract_ref": {
+      "title": "Contract reference",
+      "description": "Which contract, at which revision, with which content. A contract is frozen at run start; a different digest is a different run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_id", "contract_revision", "digest"],
+      "properties": {
+        "contract_id": { "$ref": "#/$defs/identifier" },
+        "contract_revision": { "type": "integer", "minimum": 1 },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "flow_name": {
+      "title": "Flow name",
+      "type": "string",
+      "enum": ["implement", "fanout", "assure", "adjudicate", "benchmark"]
+    },
+    "step_kind": {
+      "title": "Step kind",
+      "type": "string",
+      "enum": [
+        "gate",
+        "work",
+        "synthesis",
+        "review",
+        "adjudication",
+        "repair",
+        "flow",
+        "program"
+      ]
+    },
+    "step_state": {
+      "title": "Step state",
+      "description": "The state a run manifest records for a step. Resume reads this and never repeats a COMPLETED step.",
+      "type": "string",
+      "enum": ["PENDING", "RUNNING", "COMPLETED", "FAILED", "SKIPPED", "BLOCKED"]
+    },
+    "verdict_result": {
+      "title": "Verdict result",
+      "type": "string",
+      "enum": ["PASS", "FAIL", "BLOCKED", "INCONCLUSIVE"]
+    },
+    "ladder_level": {
+      "title": "Review ladder level",
+      "description": "0 gates, 1 blind recall, 2 calibration, 3 adjudication, 4 cross-family plus human.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4
+    },
+    "token_usage": {
+      "title": "Token usage",
+      "description": "New input, cached input and output counted separately. An aggregate that mixes cached and new input overstates cost several-fold, so no field here may be a sum of the others.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["new_input", "cached_input", "output"],
+      "properties": {
+        "new_input": { "type": "integer", "minimum": 0 },
+        "cached_input": { "type": "integer", "minimum": 0 },
+        "cache_write_input": { "type": "integer", "minimum": 0 },
+        "output": { "type": "integer", "minimum": 0 },
+        "reasoning_output": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "telemetry": {
+      "title": "Call telemetry",
+      "description": "One record per model call. dry is required so that a dry run can never be counted as live evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runner", "model", "effort", "dry", "duration_ms", "tokens"],
+      "properties": {
+        "runner": { "$ref": "#/$defs/identifier" },
+        "model": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "effort": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "dry": { "type": "boolean" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "tokens": { "$ref": "#/$defs/token_usage" },
+        "lens_id": { "$ref": "#/$defs/identifier" },
+        "attempt": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
     "candidate": {
       "title": "Candidate identity",
       "description": "What was produced or reviewed, pinned by digest. Provenance (git commit, artifact store) is carried by the referencing schema, not baked in here.",

@@ -94,6 +94,22 @@ docs/roadmap.md    implementation milestones
 runs/              run artifacts (gitignored)
 ```
 
+## Using the validator
+
+Every document that crosses a boundary is schema-validated, and consuming
+repositories are expected to run the same validator in their own CI:
+
+```
+pip install -e .
+python -m workflows.check plan.schema.json plan.toml
+python -m workflows.check envelope.schema.json runs/<id>/envelopes/*.json
+```
+
+Exit codes are check-style: 0 clean, 1 violations, 2 usage or configuration
+error. Without an install, prefix with `PYTHONPATH=src`. See
+[contracts/README.md](contracts/README.md) for the schemas and for the
+semantic rules no schema keyword can express.
+
 ## Status
 
 v0: concept layer complete (this README, `concepts/`, `docs/decisions/`).

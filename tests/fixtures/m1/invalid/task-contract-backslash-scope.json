@@ -1,0 +1,48 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "task-contract.schema.json",
+  "expect": "invalid",
+  "reason": "Windows separators are rejected; paths are repository-relative with forward slashes.",
+  "expected_errors": [
+    {
+      "path": "/scope/allowed_paths/0",
+      "keyword": "pattern"
+    }
+  ],
+  "data": {
+    "schema_version": "workflows.task-contract.v1",
+    "contract_id": "contract-alpha",
+    "contract_revision": 1,
+    "contract_type": "task",
+    "goal": "Reject step results that carry fields the contract does not declare, so that a producer cannot smuggle unvalidated data across a step boundary.",
+    "scope": {
+      "allowed_paths": [
+        "src\\example"
+      ]
+    },
+    "protected": [
+      "tests/**",
+      "contracts/**"
+    ],
+    "acceptance": [
+      {
+        "id": "AC-1",
+        "statement": "The verification command exits zero on an unchanged checkout."
+      },
+      {
+        "id": "AC-2",
+        "statement": "A result carrying an undeclared field is rejected, not ignored.",
+        "negative_path": true
+      }
+    ],
+    "verification": {
+      "command": [
+        "python",
+        "-m",
+        "unittest"
+      ],
+      "expect_exit_code": 0,
+      "timeout_seconds": 600
+    }
+  }
+}

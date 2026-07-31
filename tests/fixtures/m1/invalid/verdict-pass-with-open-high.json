@@ -1,0 +1,88 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "verdict.schema.json",
+  "expect": "invalid",
+  "reason": "PASS while carrying an open HIGH finding: no schema keyword can express this, so the semantic check must.",
+  "expected_errors": [
+    {
+      "path": "/result",
+      "keyword": "semantic:pass_with_open_blocking_finding"
+    }
+  ],
+  "data": {
+    "schema_version": "workflows.verdict.v1",
+    "verdict_id": "verdict-0001",
+    "run_id": "run-0001",
+    "flow": "implement",
+    "result": "PASS",
+    "dry_run": false,
+    "decided_at": "2026-07-31T10:10:00Z",
+    "contract_ref": {
+      "contract_id": "contract-alpha",
+      "contract_revision": 1,
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "candidate": {
+      "id": "candidate/worker-1",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "immutable": true
+    },
+    "ladder_levels_run": [
+      0,
+      1,
+      2
+    ],
+    "envelope_refs": [
+      "env-gate-1",
+      "env-work-1",
+      "env-review-1"
+    ],
+    "evidence": [
+      {
+        "id": "probe-unknown-field",
+        "kind": "probe",
+        "ref": "probes/test_unknown_field.py::test_rejects_extra_key",
+        "exit_code": 1
+      },
+      {
+        "id": "cmd-verification",
+        "kind": "command",
+        "ref": "python -m unittest",
+        "exit_code": 0
+      }
+    ],
+    "criterion_results": [
+      {
+        "criterion_id": "AC-1",
+        "result": "PASS",
+        "evidence_refs": [
+          "cmd-verification"
+        ],
+        "negative_path_claim": false
+      }
+    ],
+    "findings": [
+      {
+        "id": "F-1",
+        "severity": "HIGH",
+        "status": "OPEN",
+        "claim": "An unknown field is accepted where the contract is closed.",
+        "evidence_refs": [
+          "probe-unknown-field"
+        ],
+        "required_action": "Set additionalProperties to false on the step result object.",
+        "negative_path_claim": true,
+        "lens_id": "review/closed-contract"
+      }
+    ],
+    "non_claims": [
+      "Cross-family review (ladder level 4) was not run; no second runner exists.",
+      "The verification command's own coverage was not assessed."
+    ],
+    "telemetry_totals": {
+      "new_input": 18402,
+      "cached_input": 9100,
+      "output": 1204
+    }
+  }
+}

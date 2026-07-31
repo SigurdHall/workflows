@@ -15,6 +15,18 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m unittest discover --verbose
 
+  # Proves the claim that a consuming repository can install this package and
+  # run the validator in its own CI unchanged — installed, not PYTHONPATH-set.
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - run: python -m workflows.check plan.schema.json examples/plan.example.toml
+
   content-policy:
     runs-on: ubuntu-latest
     steps:

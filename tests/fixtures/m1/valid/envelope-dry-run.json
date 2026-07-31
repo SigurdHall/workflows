@@ -1,0 +1,55 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "envelope.schema.json",
+  "expect": "valid",
+  "reason": "A dry-run envelope: prompt composed, no model called, nothing claimed.",
+  "data": {
+    "schema_version": "workflows.envelope.v1",
+    "envelope_id": "env-dry-1",
+    "run_id": "run-0002",
+    "step_id": "work-1",
+    "step_kind": "work",
+    "status": "COMPLETED",
+    "terminal": true,
+    "result": "NOT_RUN",
+    "dry_run": true,
+    "produced_at": "2026-07-31T10:05:00Z",
+    "contract_ref": {
+      "contract_id": "contract-alpha",
+      "contract_revision": 1,
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "evidence": [],
+    "criterion_results": [
+      {
+        "criterion_id": "AC-1",
+        "result": "NOT_RUN",
+        "evidence_refs": [],
+        "negative_path_claim": false,
+        "note": "Dry run: the prompt was composed and recorded, no model was called."
+      }
+    ],
+    "findings": [],
+    "non_claims": [
+      "Dry-run evidence only; no model was called and nothing was produced."
+    ],
+    "side_effects": [
+      {
+        "kind": "file_write",
+        "target": "runs/run-0002/prompts/work-1.txt"
+      }
+    ],
+    "telemetry": {
+      "runner": "codex",
+      "model": "worker-class",
+      "effort": "medium",
+      "dry": true,
+      "duration_ms": 3,
+      "tokens": {
+        "new_input": 0,
+        "cached_input": 0,
+        "output": 0
+      }
+    }
+  }
+}

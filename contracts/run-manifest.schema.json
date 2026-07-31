@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "run-manifest.schema.json",
+  "title": "Run manifest",
+  "description": "What ran: frozen bases, step states, timestamps. Append-only and idempotent — a run killed at any point resumes from this file, and completed steps are never repeated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "kind",
+    "dry_run",
+    "created_at",
+    "updated_at",
+    "base",
+    "steps"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.run-manifest.v1" },
+    "run_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+    "kind": { "type": "string", "enum": ["flow", "program"] },
+    "flow": { "$ref": "core.defs.schema.json#/$defs/flow_name" },
+    "dry_run": { "type": "boolean" },
+    "created_at": { "$ref": "core.defs.schema.json#/$defs/timestamp" },
+    "updated_at": { "$ref": "core.defs.schema.json#/$defs/timestamp" },
+    "plan_ref": { "$ref": "#/$defs/plan_ref" },
+    "contract_ref": { "$ref": "core.defs.schema.json#/$defs/contract_ref" },
+    "base": {
+      "description": "The frozen base per repository. Freezing happens once, at run start.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/base_ref" }
+    },
+    "steps": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "budgets": { "$ref": "#/$defs/budgets" },
+    "telemetry_totals": { "$ref": "core.defs.schema.json#/$defs/token_usage" },
+    "stopped_reason": { "type": "string", "minLength": 1, "maxLength": 1000 }
+  },
+  "$defs": {
+    "plan_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_id", "plan_revision", "digest"],
+      "properties": {
+        "plan_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "plan_revision": { "type": "integer", "minimum": 1 },
+        "digest": { "$ref": "core.defs.schema.json#/$defs/digest" }
+      }
+    },
+    "base_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo_id", "commit"],
+      "properties": {
+        "repo_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "commit": { "$ref": "core.defs.schema.json#/$defs/git_commit" },
+        "worktree": { "$ref": "core.defs.schema.json#/$defs/relative_path" }
+      }
+    },
+    "step": {
+      "title": "Step record",
+      "description": "One step's state. Every step checks this record before acting, which is what makes re-entry safe.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step_id", "kind", "state", "attempt"],
+      "properties": {
+        "step_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "kind": { "$ref": "core.defs.schema.json#/$defs/step_kind" },
+        "state": { "$ref": "core.defs.schema.json#/$defs/step_state" },
+        "attempt": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "task_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "lens_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "started_at": { "$ref": "core.defs.schema.json#/$defs/timestamp" },
+        "finished_at": { "$ref": "core.defs.schema.json#/$defs/timestamp" },
+        "envelope_path": { "$ref": "core.defs.schema.json#/$defs/relative_path" },
+        "prompt_path": { "$ref": "core.defs.schema.json#/$defs/relative_path" },
+        "note": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tokens": { "type": "integer", "minimum": 1 },
+        "wall_clock_seconds": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

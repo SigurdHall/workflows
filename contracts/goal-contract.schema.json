@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "goal-contract.schema.json",
+  "title": "Goal contract",
+  "description": "Outcome-level work without a deterministic oracle. Explicitly second-class on certainty (ADR 0007): its gates check evidence obligations, which is weaker than hashes, so its verdicts must separate what was checked from what was judged.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "contract_id",
+    "contract_revision",
+    "contract_type",
+    "goal",
+    "subgoals",
+    "evidence_requirements",
+    "attainment_rubric"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.goal-contract.v1" },
+    "contract_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+    "contract_revision": { "type": "integer", "minimum": 1 },
+    "contract_type": { "type": "string", "const": "goal" },
+    "goal": { "type": "string", "minLength": 40, "maxLength": 4000 },
+    "subgoals": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": { "$ref": "#/$defs/subgoal" }
+    },
+    "evidence_requirements": {
+      "description": "What must exist and be traceable for the goal to count as achieved.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/evidence_requirement" }
+    },
+    "attainment_rubric": { "$ref": "#/$defs/attainment_rubric" },
+    "notes": { "type": "string", "maxLength": 4000 }
+  },
+  "$defs": {
+    "subgoal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement"],
+      "properties": {
+        "id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "statement": { "type": "string", "minLength": 10, "maxLength": 1000 }
+      }
+    },
+    "evidence_requirement": {
+      "title": "Evidence obligation",
+      "description": "A deterministic check a gate can run against the deliverables, or an explicit manual_judgment marker. Marking an obligation manual_judgment is how a goal contract admits it has no oracle for that item, which the verdict must then carry as a non-claim.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "check"],
+      "properties": {
+        "id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "statement": { "type": "string", "minLength": 10, "maxLength": 1000 },
+        "check": {
+          "type": "string",
+          "enum": [
+            "artifact_exists",
+            "reference_resolves",
+            "number_traceable",
+            "command_succeeds",
+            "manual_judgment"
+          ]
+        },
+        "target": {
+          "description": "Path, reference, or command the check applies to. Required by every check except manual_judgment.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "attainment_rubric": {
+      "title": "Attainment rubric",
+      "description": "How a reviewer grades goal attainment. Defined per contract, never globally, and never as a numeric average — scoring stays out of the core schemas.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["levels"],
+      "properties": {
+        "levels": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "statement"],
+            "properties": {
+              "id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+              "statement": { "type": "string", "minLength": 10, "maxLength": 1000 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

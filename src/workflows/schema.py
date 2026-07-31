@@ -105,8 +105,8 @@ class SchemaRegistry:
         check_schema(schema, origin=sorted(keys)[0])
         for name in keys:
             existing = self._schemas.get(name)
-            if existing is not None and existing is not schema:
-                raise SchemaError(f"duplicate schema key: {name}")
+            if existing is not None and existing != schema:
+                raise SchemaError(f"conflicting schemas registered under {name!r}")
             self._schemas[name] = schema
 
     def get(self, key: str) -> dict[str, Any]:

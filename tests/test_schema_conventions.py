@@ -84,6 +84,34 @@ class SchemaConventionsTest(unittest.TestCase):
                 with self.subTest(schema=name, node=where, ref=ref):
                     s._resolve_ref(ref, document, registry)
 
+    def test_instance_documents_pin_their_schema_version(self) -> None:
+        """Every document that describes an instance declares a const version.
+
+        ``core.defs.schema.json`` is exempt: it is a ``$defs`` library with no
+        instance form, and carries the shared version *pattern* instead.
+        """
+        pattern = support.registry().get("core.defs.schema.json")["$defs"]["schema_version"]
+        checked = 0
+        for name, document in schema_documents():
+            if "type" not in document:
+                continue
+            with self.subTest(schema=name):
+                version = (document.get("properties") or {}).get("schema_version")
+                self.assertIsNotNone(version, "instance documents need a schema_version")
+                self.assertIn("const", version, "schema_version must be a const")
+                self.assertIn("schema_version", document.get("required", []))
+                self.assertEqual(s.validate(version["const"], pattern), [])
+                checked += 1
+        self.assertGreater(checked, 0)
+
+    def test_every_schema_version_const_is_unique(self) -> None:
+        versions = [
+            (document.get("properties") or {}).get("schema_version", {}).get("const")
+            for _, document in schema_documents()
+            if "type" in document
+        ]
+        self.assertEqual(len(versions), len(set(versions)))
+
     def test_digest_definitions_use_the_prefixed_sha256_shape(self) -> None:
         digest = support.registry().get("core.defs.schema.json")["$defs"]["digest"]
         self.assertEqual(digest["pattern"], "^sha256:[0-9a-f]{64}$")

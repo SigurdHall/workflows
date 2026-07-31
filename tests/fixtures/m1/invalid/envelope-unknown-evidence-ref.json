@@ -1,0 +1,109 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "envelope.schema.json",
+  "expect": "invalid",
+  "reason": "A finding pointing at evidence the envelope does not carry. The dangling reference also strips the finding of the probe its negative-path claim needs, so both rules fire \u2014 that cascade is the point.",
+  "expected_errors": [
+    {
+      "path": "/findings/0/evidence_refs/0",
+      "keyword": "semantic:unknown_evidence_ref"
+    },
+    {
+      "path": "/findings/0",
+      "keyword": "semantic:negative_path_requires_probe"
+    }
+  ],
+  "data": {
+    "schema_version": "workflows.envelope.v1",
+    "envelope_id": "env-review-1",
+    "run_id": "run-0001",
+    "step_id": "review-level-1",
+    "step_kind": "review",
+    "status": "COMPLETED",
+    "terminal": true,
+    "result": "FAIL",
+    "dry_run": false,
+    "produced_at": "2026-07-31T10:00:00Z",
+    "contract_ref": {
+      "contract_id": "contract-alpha",
+      "contract_revision": 1,
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "candidate": {
+      "id": "candidate/worker-1",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "immutable": true
+    },
+    "lens_id": "review/closed-contract",
+    "ladder_level": 1,
+    "evidence": [
+      {
+        "id": "probe-unknown-field",
+        "kind": "probe",
+        "ref": "probes/test_unknown_field.py::test_rejects_extra_key",
+        "exit_code": 1
+      },
+      {
+        "id": "cmd-verification",
+        "kind": "command",
+        "ref": "python -m unittest",
+        "exit_code": 0
+      }
+    ],
+    "criterion_results": [
+      {
+        "criterion_id": "AC-1",
+        "result": "PASS",
+        "evidence_refs": [
+          "cmd-verification"
+        ],
+        "negative_path_claim": false
+      },
+      {
+        "criterion_id": "AC-2",
+        "result": "FAIL",
+        "evidence_refs": [
+          "probe-unknown-field"
+        ],
+        "negative_path_claim": true
+      }
+    ],
+    "findings": [
+      {
+        "id": "F-1",
+        "severity": "HIGH",
+        "status": "OPEN",
+        "claim": "An unknown field is accepted where the contract is closed.",
+        "evidence_refs": [
+          "probe-that-was-never-logged"
+        ],
+        "required_action": "Set additionalProperties to false on the step result object.",
+        "negative_path_claim": true,
+        "lens_id": "review/closed-contract"
+      }
+    ],
+    "non_claims": [
+      "Cross-family review (ladder level 4) was not run; no second runner exists.",
+      "This envelope judges the candidate, not the contract it was written against."
+    ],
+    "side_effects": [
+      {
+        "kind": "none",
+        "target": "none"
+      }
+    ],
+    "telemetry": {
+      "runner": "codex",
+      "model": "worker-class",
+      "effort": "medium",
+      "dry": false,
+      "duration_ms": 41230,
+      "tokens": {
+        "new_input": 18402,
+        "cached_input": 9100,
+        "output": 1204
+      },
+      "lens_id": "review/closed-contract"
+    }
+  }
+}

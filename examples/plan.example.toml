@@ -1,0 +1,56 @@
+# A program plan: one file, many contracts, one human checkpoint.
+#
+# Validate it with:
+#     python -m workflows.check plan.schema.json examples/plan.example.toml
+#
+# Everything here is generic. Real contracts and plans live in the consuming
+# repository, never in this one.
+
+schema_version = "workflows.plan.v1"
+plan_id = "plan-0001"
+plan_revision = 1
+description = "Two implement tasks and one fanout task with disjoint write scopes."
+
+[[base]]
+repo_id = "target"
+commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+[[tasks]]
+task_id = "task-parser"
+repo_id = "target"
+contract_path = "contracts/task-parser.json"
+flow = "implement"
+write_scope = ["src/parser/**"]
+
+[[tasks]]
+task_id = "task-report"
+repo_id = "target"
+contract_path = "contracts/task-report.json"
+flow = "implement"
+write_scope = ["src/report/**"]
+
+# Fan-out is breadth of perspectives on one task. The lens set is chosen at
+# planning time and recorded here, which is what makes lens yield measurable.
+[[tasks]]
+task_id = "task-canonical"
+repo_id = "target"
+contract_path = "contracts/task-canonical.json"
+flow = "fanout"
+write_scope = ["src/canonical/**"]
+lens_set = ["work/spec-fidelity", "work/minimal-change", "work/defensive-input"]
+focus_hint = "The digest must not change when the same set is reordered."
+
+[concurrency]
+max_parallel_tasks = 3
+max_parallel_workers = 5
+
+[budgets]
+tokens = 2000000
+wall_clock_seconds = 5400
+
+[escalation]
+level_2_on_severity = "HIGH"
+level_3_on_conflict = true
+stop_on_severity = "CRITICAL"
+max_repair_rounds = 2
+dryness_rounds = 2

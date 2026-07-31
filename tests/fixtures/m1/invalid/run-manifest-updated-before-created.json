@@ -1,0 +1,71 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "run-manifest.schema.json",
+  "expect": "invalid",
+  "reason": "The run was updated before it existed.",
+  "expected_errors": [
+    {
+      "path": "/updated_at",
+      "keyword": "semantic:updated_before_created"
+    }
+  ],
+  "data": {
+    "schema_version": "workflows.run-manifest.v1",
+    "run_id": "run-0001",
+    "kind": "flow",
+    "flow": "implement",
+    "dry_run": false,
+    "created_at": "2026-07-31T09:59:00Z",
+    "updated_at": "2026-07-31T09:00:00Z",
+    "contract_ref": {
+      "contract_id": "contract-alpha",
+      "contract_revision": 1,
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "base": [
+      {
+        "repo_id": "target",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "worktree": "worktrees/task-parser"
+      }
+    ],
+    "steps": [
+      {
+        "step_id": "gate-base-identity",
+        "kind": "gate",
+        "state": "COMPLETED",
+        "attempt": 1,
+        "started_at": "2026-07-31T09:59:01Z",
+        "finished_at": "2026-07-31T09:59:01Z",
+        "envelope_path": "envelopes/gate-base-identity.json"
+      },
+      {
+        "step_id": "work-1",
+        "kind": "work",
+        "state": "COMPLETED",
+        "attempt": 1,
+        "started_at": "2026-07-31T09:59:02Z",
+        "finished_at": "2026-07-31T10:03:00Z",
+        "envelope_path": "envelopes/work-1.json",
+        "prompt_path": "prompts/work-1.txt"
+      },
+      {
+        "step_id": "review-level-1",
+        "kind": "review",
+        "state": "RUNNING",
+        "attempt": 1,
+        "lens_id": "review/closed-contract",
+        "started_at": "2026-07-31T10:03:01Z"
+      }
+    ],
+    "budgets": {
+      "tokens": 2000000,
+      "wall_clock_seconds": 5400
+    },
+    "telemetry_totals": {
+      "new_input": 18402,
+      "cached_input": 9100,
+      "output": 1204
+    }
+  }
+}

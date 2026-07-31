@@ -341,11 +341,17 @@ class RegistryTest(unittest.TestCase):
             registry.get(registry.get("core.defs.schema.json")["$id"]),
         )
 
-    def test_duplicate_key_raises(self) -> None:
+    def test_conflicting_schemas_under_one_key_raise(self) -> None:
         registry = s.SchemaRegistry()
-        registry.add({"$id": "a.schema.json"})
+        registry.add({"$id": "a.schema.json", "type": "string"})
         with self.assertRaises(s.SchemaError):
-            registry.add({"$id": "a.schema.json"})
+            registry.add({"$id": "a.schema.json", "type": "integer"})
+
+    def test_registering_the_same_document_twice_is_allowed(self) -> None:
+        registry = s.SchemaRegistry()
+        registry.add({"$id": "a.schema.json", "type": "string"})
+        registry.add({"$id": "a.schema.json", "type": "string"})
+        self.assertEqual(registry.keys(), ["a.schema.json"])
 
     def test_schema_without_identity_raises(self) -> None:
         with self.assertRaises(s.SchemaError):

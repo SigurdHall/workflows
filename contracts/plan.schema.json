@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "plan.schema.json",
+  "title": "Plan",
+  "description": "One plan, many contracts. Authored as TOML and validated as the parsed structure. This is the single artifact a human approves before a program executes; everything after approval is signal-driven.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plan_id",
+    "plan_revision",
+    "base",
+    "tasks",
+    "concurrency",
+    "budgets",
+    "escalation"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.plan.v1" },
+    "plan_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+    "plan_revision": { "type": "integer", "minimum": 1 },
+    "description": { "type": "string", "maxLength": 2000 },
+    "base": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/base" }
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/task" }
+    },
+    "concurrency": { "$ref": "#/$defs/concurrency" },
+    "budgets": { "$ref": "#/$defs/budgets" },
+    "escalation": { "$ref": "#/$defs/escalation" }
+  },
+  "$defs": {
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo_id", "commit"],
+      "properties": {
+        "repo_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "commit": { "$ref": "core.defs.schema.json#/$defs/git_commit" }
+      }
+    },
+    "task": {
+      "title": "Planned task",
+      "description": "One contract, one flow, one disjoint write scope. Tasks whose write scopes overlap are one task, and the plan is rejected at resolve time.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "contract_path", "flow", "write_scope"],
+      "properties": {
+        "task_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "repo_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "contract_path": { "$ref": "core.defs.schema.json#/$defs/relative_path" },
+        "flow": { "$ref": "core.defs.schema.json#/$defs/flow_name" },
+        "write_scope": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": { "$ref": "core.defs.schema.json#/$defs/path_pattern" }
+        },
+        "lens_set": {
+          "description": "Work lenses for fanout, chosen at planning time and recorded here so lens yield stays measurable.",
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "$ref": "core.defs.schema.json#/$defs/identifier" }
+        },
+        "review_lens_set": {
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "$ref": "core.defs.schema.json#/$defs/identifier" }
+        },
+        "focus_hint": {
+          "description": "One or two task-specific sentences injected verbatim into composed prompts. No model rewrites lens content at run time.",
+          "type": "string",
+          "maxLength": 400
+        }
+      }
+    },
+    "concurrency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_parallel_tasks"],
+      "properties": {
+        "max_parallel_tasks": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "max_parallel_workers": { "type": "integer", "minimum": 1, "maximum": 64 }
+      }
+    },
+    "budgets": {
+      "description": "Enforced from telemetry. A breach stops the program cleanly with a BLOCKED envelope, never a crash.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokens", "wall_clock_seconds"],
+      "properties": {
+        "tokens": { "type": "integer", "minimum": 1 },
+        "wall_clock_seconds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "escalation": {
+      "title": "Escalation thresholds",
+      "description": "Review escalates on signal, never as a pipeline. The thresholds are data, not code.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level_2_on_severity", "stop_on_severity", "max_repair_rounds"],
+      "properties": {
+        "level_2_on_severity": { "$ref": "core.defs.schema.json#/$defs/severity" },
+        "level_3_on_conflict": { "type": "boolean" },
+        "stop_on_severity": { "$ref": "core.defs.schema.json#/$defs/severity" },
+        "max_repair_rounds": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "dryness_rounds": {
+          "description": "K consecutive distinct lenses returning nothing new before a fan-out stops.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        }
+      }
+    }
+  }
+}
