@@ -104,6 +104,13 @@ review in the motivating experiments:
    comparing as different without a finding.
 10. Reference integrity — dangling cross-references not validated.
 
+Domain-specific extensions (classes 11–20: BI/analytics and
+agent-engineering) and the task-domain catalog live in
+[benchmark-domains.md](benchmark-domains.md). A v0 corpus must cover
+Tier A archetypes from both domain families; Tier B/C archetypes enter
+when `assure` goal mode exists, using the known-worse-variant technique
+described there.
+
 Requirements: each planted defect has a hidden answer-key entry
 (class, location, severity, triggering probe); the scorer reports
 reviewer recall/precision *per class* and lens yield per lens id; scorer

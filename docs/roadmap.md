@@ -132,6 +132,9 @@ fixtures show the checked/judged separation.
 
 - Planted-defect corpus tooling: defect manifest format (hidden answer
   key), corpus builder, scorer (reviewer recall/precision, lens yield).
+- Corpus content per `test-charter.md` and `benchmark-domains.md`:
+  Tier A archetypes from both domain families (BI/analytics and
+  agent-engineering), defect classes 1–20.
 - Matrix runner over {model, effort, worker count} reusing program
   infrastructure.
 - Report: per-cell cost (new input/output tokens, wall clock) vs
