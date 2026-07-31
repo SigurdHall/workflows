@@ -1,0 +1,10 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/side_effect",
+  "expect": "valid",
+  "reason": "Nothing touched is declared explicitly, never by omission.",
+  "data": {
+    "kind": "none",
+    "target": "none"
+  }
+}

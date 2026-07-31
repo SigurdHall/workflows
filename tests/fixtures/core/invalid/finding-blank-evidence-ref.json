@@ -1,0 +1,23 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/finding",
+  "expect": "invalid",
+  "reason": "A whitespace-only evidence id resolves to nothing.",
+  "expected_errors": [
+    {
+      "path": "/evidence_refs/0",
+      "keyword": "pattern"
+    }
+  ],
+  "data": {
+    "id": "finding-001",
+    "severity": "HIGH",
+    "status": "OPEN",
+    "claim": "The digest changes when the same set is reordered.",
+    "evidence_refs": [
+      " "
+    ],
+    "required_action": "Canonicalize the set before hashing.",
+    "negative_path_claim": false
+  }
+}

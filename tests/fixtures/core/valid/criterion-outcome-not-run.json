@@ -1,0 +1,13 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/criterion_outcome",
+  "expect": "valid",
+  "reason": "A NOT_RUN criterion legitimately carries no evidence.",
+  "data": {
+    "criterion_id": "AC-4",
+    "result": "NOT_RUN",
+    "evidence_refs": [],
+    "negative_path_claim": false,
+    "note": "Requires a second runner family."
+  }
+}

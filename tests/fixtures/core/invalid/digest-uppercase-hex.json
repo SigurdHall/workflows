@@ -1,0 +1,13 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/digest",
+  "expect": "invalid",
+  "reason": "Uppercase hex breaks digest comparison by string equality.",
+  "expected_errors": [
+    {
+      "path": "",
+      "keyword": "pattern"
+    }
+  ],
+  "data": "sha256:AB12CD34AB12CD34AB12CD34AB12CD34AB12CD34AB12CD34AB12CD34AB12CD34"
+}

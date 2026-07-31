@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "core.defs.schema.json",
+  "title": "Core definitions",
+  "description": "Shared $defs for every schema in this repository. Referenced as core.defs.schema.json#/$defs/<name>. Scores and rubrics are deliberately absent: consumers that want them extend their own schemas.",
+  "$defs": {
+    "schema_version": {
+      "title": "Schema version",
+      "description": "Every document declares its schema version; concrete schemas narrow this to a const.",
+      "type": "string",
+      "pattern": "^workflows(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*)+\\.v[1-9][0-9]*$"
+    },
+    "identifier": {
+      "title": "Identifier",
+      "description": "Stable machine identity. Whitespace-only and empty identifiers are rejected by construction.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "digest": {
+      "title": "Content digest",
+      "description": "Lowercase hex SHA-256 with an explicit algorithm prefix.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "title": "UTC timestamp",
+      "description": "RFC 3339 in UTC; local offsets are rejected so run records sort globally.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+    },
+    "status": {
+      "title": "Step status",
+      "type": "string",
+      "enum": ["COMPLETED", "FAILED", "BLOCKED", "STOPPED"]
+    },
+    "criterion_result": {
+      "title": "Criterion result",
+      "description": "NOT_RUN and INCONCLUSIVE exist so that unchecked criteria can never be reported as passing.",
+      "type": "string",
+      "enum": ["PASS", "FAIL", "NOT_RUN", "INCONCLUSIVE"]
+    },
+    "severity": {
+      "title": "Finding severity",
+      "type": "string",
+      "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+    },
+    "finding_status": {
+      "title": "Finding status",
+      "type": "string",
+      "enum": ["OPEN", "RESOLVED", "ACCEPTED_RISK", "WITHDRAWN"]
+    },
+    "evidence_kind": {
+      "title": "Evidence kind",
+      "description": "probe marks an executed adversarial check; a negative-path claim requires one.",
+      "type": "string",
+      "enum": ["command", "probe", "file", "diff", "log", "citation"]
+    },
+    "evidence_ref": {
+      "title": "Evidence reference",
+      "description": "One logged piece of evidence. Claims point at these by id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "ref"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "kind": { "$ref": "#/$defs/evidence_kind" },
+        "ref": {
+          "description": "The command line, path, pointer, or citation the evidence came from.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "digest": { "$ref": "#/$defs/digest" },
+        "exit_code": { "type": "integer" },
+        "excerpt": { "type": "string", "maxLength": 4000 }
+      }
+    },
+    "evidence_ref_list": {
+      "title": "Evidence reference ids",
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "finding": {
+      "title": "Finding",
+      "description": "A defect claim with evidence and the smallest action that resolves it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "severity",
+        "status",
+        "claim",
+        "evidence_refs",
+        "required_action",
+        "negative_path_claim"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "status": { "$ref": "#/$defs/finding_status" },
+        "claim": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "location": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "evidence_refs": {
+          "$ref": "#/$defs/evidence_ref_list",
+          "minItems": 1
+        },
+        "required_action": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "negative_path_claim": {
+          "description": "True when the claim asserts that something invalid is rejected. Such claims require an executed probe among the evidence refs.",
+          "type": "boolean"
+        },
+        "lens_id": { "$ref": "#/$defs/identifier" },
+        "criterion_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "criterion_outcome": {
+      "title": "Criterion outcome",
+      "description": "One acceptance criterion mapped to evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterion_id", "result", "evidence_refs", "negative_path_claim"],
+      "properties": {
+        "criterion_id": { "$ref": "#/$defs/identifier" },
+        "result": { "$ref": "#/$defs/criterion_result" },
+        "evidence_refs": { "$ref": "#/$defs/evidence_ref_list" },
+        "negative_path_claim": { "type": "boolean" },
+        "note": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "non_claims": {
+      "title": "Non-claims",
+      "description": "What this document explicitly does not assert. At least one is mandatory: a PASS is bounded by its non-claims.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "side_effect_kind": {
+      "title": "Side effect kind",
+      "type": "string",
+      "enum": ["none", "file_write", "process", "network", "git"]
+    },
+    "side_effect": {
+      "title": "Side effect",
+      "description": "What the step touched. 'Nothing' is declared explicitly as kind none, never by omission.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "target"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/side_effect_kind" },
+        "target": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "note": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "candidate": {
+      "title": "Candidate identity",
+      "description": "What was produced or reviewed, pinned by digest. Provenance (git commit, artifact store) is carried by the referencing schema, not baked in here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "digest", "immutable"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "immutable": { "type": "boolean" }
+      }
+    }
+  }
+}

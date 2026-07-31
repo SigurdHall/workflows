@@ -1,0 +1,15 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/non_claims",
+  "expect": "invalid",
+  "reason": "An empty non-claim string says nothing.",
+  "expected_errors": [
+    {
+      "path": "/0",
+      "keyword": "minLength"
+    }
+  ],
+  "data": [
+    ""
+  ]
+}

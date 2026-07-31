@@ -1,0 +1,13 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/non_claims",
+  "expect": "invalid",
+  "reason": "An envelope with no non-claims asserts unbounded success.",
+  "expected_errors": [
+    {
+      "path": "",
+      "keyword": "minItems"
+    }
+  ],
+  "data": []
+}

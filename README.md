@@ -80,6 +80,8 @@ prompts, and the run manifest without a single model call.
 ```
 concepts/          one page per concept (the seven above)
 contracts/         JSON Schemas: contracts, envelopes, verdicts, plans, run manifests
+src/workflows/     the package: schema validation, gates, runners, flows
+tests/             unittest suite and the annotated fixture corpus
 gates/             deterministic checks
 lenses/work/       producer perspectives
 lenses/review/     reviewer attack perspectives

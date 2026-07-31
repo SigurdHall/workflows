@@ -1,0 +1,10 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/non_claims",
+  "expect": "valid",
+  "reason": "Two distinct non-claims.",
+  "data": [
+    "Dry-run evidence only; no live model call was made.",
+    "Ladder level 4 (cross-family review) was not run."
+  ]
+}

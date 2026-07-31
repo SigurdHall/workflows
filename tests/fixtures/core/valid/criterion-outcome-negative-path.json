@@ -1,0 +1,14 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/criterion_outcome",
+  "expect": "valid",
+  "reason": "A negative-path criterion backed by a probe.",
+  "data": {
+    "criterion_id": "AC-5",
+    "result": "PASS",
+    "evidence_refs": [
+      "probe-invalid-transition"
+    ],
+    "negative_path_claim": true
+  }
+}

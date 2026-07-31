@@ -1,0 +1,13 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/schema_version",
+  "expect": "invalid",
+  "reason": "Unversioned data is invalid.",
+  "expected_errors": [
+    {
+      "path": "",
+      "keyword": "pattern"
+    }
+  ],
+  "data": "workflows.task-contract"
+}

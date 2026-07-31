@@ -1,0 +1,17 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/candidate",
+  "expect": "invalid",
+  "reason": "The string true is not a boolean.",
+  "expected_errors": [
+    {
+      "path": "/immutable",
+      "keyword": "type"
+    }
+  ],
+  "data": {
+    "id": "candidate/worker-1",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "immutable": "true"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/non_claims",
+  "expect": "invalid",
+  "reason": "Duplicated non-claims inflate the appearance of boundedness.",
+  "expected_errors": [
+    {
+      "path": "",
+      "keyword": "uniqueItems"
+    }
+  ],
+  "data": [
+    "No live model call was made.",
+    "No live model call was made."
+  ]
+}

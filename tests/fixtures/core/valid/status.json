@@ -1,0 +1,7 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/status",
+  "expect": "valid",
+  "reason": "A terminal step status.",
+  "data": "BLOCKED"
+}

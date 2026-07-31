@@ -1,0 +1,16 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/candidate",
+  "expect": "invalid",
+  "reason": "A candidate without a digest cannot be pinned.",
+  "expected_errors": [
+    {
+      "path": "/digest",
+      "keyword": "required"
+    }
+  ],
+  "data": {
+    "id": "candidate/worker-1",
+    "immutable": true
+  }
+}

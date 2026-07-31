@@ -1,0 +1,23 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/finding",
+  "expect": "invalid",
+  "reason": "Type conflation: the integer 1 is not the boolean true.",
+  "expected_errors": [
+    {
+      "path": "/negative_path_claim",
+      "keyword": "type"
+    }
+  ],
+  "data": {
+    "id": "finding-001",
+    "severity": "HIGH",
+    "status": "OPEN",
+    "claim": "The digest changes when the same set is reordered.",
+    "evidence_refs": [
+      "probe-reorder"
+    ],
+    "required_action": "Canonicalize the set before hashing.",
+    "negative_path_claim": 1
+  }
+}

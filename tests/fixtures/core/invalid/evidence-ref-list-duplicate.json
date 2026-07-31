@@ -1,0 +1,16 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/evidence_ref_list",
+  "expect": "invalid",
+  "reason": "The same evidence id listed twice counts one probe as two.",
+  "expected_errors": [
+    {
+      "path": "",
+      "keyword": "uniqueItems"
+    }
+  ],
+  "data": [
+    "probe-1",
+    "probe-1"
+  ]
+}

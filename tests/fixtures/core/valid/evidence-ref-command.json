@@ -1,0 +1,13 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/evidence_ref",
+  "expect": "valid",
+  "reason": "A command evidence reference with exit code and excerpt.",
+  "data": {
+    "id": "cmd-unittest",
+    "kind": "command",
+    "ref": "python -m unittest",
+    "exit_code": 0,
+    "excerpt": "OK"
+  }
+}

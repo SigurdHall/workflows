@@ -1,0 +1,12 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/evidence_ref",
+  "expect": "valid",
+  "reason": "A probe evidence reference, the kind a negative-path claim requires.",
+  "data": {
+    "id": "probe-invalid-transition",
+    "kind": "probe",
+    "ref": "tests/probes/test_invalid_transition.py::test_blocked_to_running",
+    "exit_code": 1
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/identifier",
+  "expect": "valid",
+  "reason": "A path-shaped identifier.",
+  "data": "lenses/review/closed-contract"
+}

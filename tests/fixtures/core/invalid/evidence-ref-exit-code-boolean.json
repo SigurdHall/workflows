@@ -1,0 +1,18 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/evidence_ref",
+  "expect": "invalid",
+  "reason": "Type conflation: true is not an exit code.",
+  "expected_errors": [
+    {
+      "path": "/exit_code",
+      "keyword": "type"
+    }
+  ],
+  "data": {
+    "id": "cmd-1",
+    "kind": "command",
+    "ref": "python -m unittest",
+    "exit_code": true
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/timestamp",
+  "expect": "valid",
+  "reason": "RFC 3339 UTC with fractional seconds.",
+  "data": "2026-07-31T09:15:00.123Z"
+}

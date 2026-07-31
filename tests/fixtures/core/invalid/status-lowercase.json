@@ -1,0 +1,13 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/status",
+  "expect": "invalid",
+  "reason": "Status enums are case-sensitive.",
+  "expected_errors": [
+    {
+      "path": "",
+      "keyword": "enum"
+    }
+  ],
+  "data": "completed"
+}

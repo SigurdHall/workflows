@@ -1,0 +1,11 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/candidate",
+  "expect": "valid",
+  "reason": "Candidate identity: id, digest, immutability flag.",
+  "data": {
+    "id": "candidate/worker-1",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "immutable": true
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/digest",
+  "expect": "valid",
+  "reason": "A well-formed sha256 digest.",
+  "data": "sha256:ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34"
+}

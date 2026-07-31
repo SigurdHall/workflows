@@ -1,0 +1,13 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/timestamp",
+  "expect": "invalid",
+  "reason": "A local offset breaks global ordering of run records.",
+  "expected_errors": [
+    {
+      "path": "",
+      "keyword": "pattern"
+    }
+  ],
+  "data": "2026-07-31T09:15:00+02:00"
+}

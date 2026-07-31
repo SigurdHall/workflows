@@ -1,0 +1,7 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/schema_version",
+  "expect": "valid",
+  "reason": "A namespaced, versioned schema identifier.",
+  "data": "workflows.task-contract.v1"
+}

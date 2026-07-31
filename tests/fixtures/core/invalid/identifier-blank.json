@@ -1,0 +1,13 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/identifier",
+  "expect": "invalid",
+  "reason": "A whitespace-only identifier is blank identity.",
+  "expected_errors": [
+    {
+      "path": "",
+      "keyword": "pattern"
+    }
+  ],
+  "data": " "
+}

@@ -1,0 +1,13 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/digest",
+  "expect": "invalid",
+  "reason": "Digest truncated to 40 hex characters; a real hand-written envelope error.",
+  "expected_errors": [
+    {
+      "path": "",
+      "keyword": "pattern"
+    }
+  ],
+  "data": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

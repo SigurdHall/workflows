@@ -1,0 +1,19 @@
+{
+  "fixture_version": "workflows.fixture.v1",
+  "schema": "core.defs.schema.json#/$defs/criterion_outcome",
+  "expect": "invalid",
+  "reason": "The negative-path declaration is mandatory; the probe rule keys on it.",
+  "expected_errors": [
+    {
+      "path": "/negative_path_claim",
+      "keyword": "required"
+    }
+  ],
+  "data": {
+    "criterion_id": "AC-5",
+    "result": "PASS",
+    "evidence_refs": [
+      "probe-1"
+    ]
+  }
+}
