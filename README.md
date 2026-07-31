@@ -103,6 +103,18 @@ directories carry the definitions and the documentation for those layers;
 `lenses/` carries the lens files themselves, which are data injected
 verbatim into prompts.
 
+## Running one
+
+```
+python -m workflows.program run plan.toml            # resolve, print, stop
+python -m workflows.program run plan.toml --approve  # the single checkpoint
+python -m workflows.flow implement --contract c.json --worktree . --dry-run
+```
+
+`--dry-run` materializes worktrees, composed prompts, gate results and the
+run manifest, and calls no model. A dry run never reports PASS: nothing was
+judged, so the verdict is INCONCLUSIVE and says why.
+
 ## Using the validator
 
 Every document that crosses a boundary is schema-validated, and consuming

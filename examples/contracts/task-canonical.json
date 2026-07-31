@@ -1,0 +1,35 @@
+{
+  "schema_version": "workflows.task-contract.v1",
+  "contract_revision": 1,
+  "contract_type": "task",
+  "contract_id": "contract-canonical",
+  "goal": "Canonicalize a set before hashing it, so that the same set written in a different order produces the same digest.",
+  "scope": {
+    "allowed_paths": [
+      "src/canonical/**"
+    ]
+  },
+  "protected": [
+    "tests/**"
+  ],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "statement": "The verification command exits zero."
+    },
+    {
+      "id": "AC-2",
+      "statement": "Reordering the same set does not change the digest.",
+      "negative_path": true
+    }
+  ],
+  "verification": {
+    "command": [
+      "python",
+      "-m",
+      "unittest"
+    ],
+    "expect_exit_code": 0,
+    "timeout_seconds": 600
+  }
+}

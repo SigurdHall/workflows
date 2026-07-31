@@ -1,0 +1,35 @@
+{
+  "schema_version": "workflows.task-contract.v1",
+  "contract_revision": 1,
+  "contract_type": "task",
+  "contract_id": "contract-report",
+  "goal": "Render the summary report from the same numbers the pipeline produced, so a reader can trace every figure back to its source.",
+  "scope": {
+    "allowed_paths": [
+      "src/report/**"
+    ]
+  },
+  "protected": [
+    "tests/**"
+  ],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "statement": "The verification command exits zero."
+    },
+    {
+      "id": "AC-2",
+      "statement": "Every figure in the report resolves to a value in the source data.",
+      "negative_path": true
+    }
+  ],
+  "verification": {
+    "command": [
+      "python",
+      "-m",
+      "unittest"
+    ],
+    "expect_exit_code": 0,
+    "timeout_seconds": 600
+  }
+}

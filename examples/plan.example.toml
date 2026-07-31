@@ -3,6 +3,9 @@
 # Validate it with:
 #     python -m workflows.check plan.schema.json examples/plan.example.toml
 #
+# Resolve it (the single checkpoint; nothing runs):
+#     python -m workflows.program run examples/plan.example.toml
+#
 # Everything here is generic. Real contracts and plans live in the consuming
 # repository, never in this one.
 

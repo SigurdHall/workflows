@@ -250,3 +250,34 @@ writing a second one.
 run's worktrees are exactly what a resumed run reuses, so cleanup is an
 explicit call (`fanout.cleanup_worktrees`) rather than a `finally` block
 that would make every kill unresumable.
+
+## M6
+
+**D-M6-1 — The checkpoint is a flag, not a prompt.** The roadmap says
+"single approval checkpoint". An interactive prompt cannot run in CI and
+cannot be scripted, so `program run plan.toml` resolves and prints, and the
+same command with `--approve` executes. The approval is a deliberate human
+act either way, and it happens exactly once per program.
+
+**D-M6-2 — A token budget counts new input plus output; cached input is
+reported but not charged.** The roadmap says budgets are "enforced from
+telemetry" without saying what counts. Charging cached input would stop runs
+that cost little, and the repository's own design note is that an aggregate
+mixing cached and new input overstates cost several-fold.
+
+**D-M6-3 — Every execution writes a numbered report
+(`reports/1.json`, `reports/2.json`, …).** The roadmap says "consolidated
+report", singular. Run artifacts are append-only, and a resume that
+completed more tasks has something new to say; overwriting the first report
+would erase what the program knew when it stopped.
+
+**D-M6-4 — A resume re-reads the original plan file rather than the copy in
+the run.** Contract paths are relative to the plan file, so the copy cannot
+resolve them. The digest of the original is compared against the one
+recorded at run start, so a plan edited after approval is refused rather
+than silently executed.
+
+**D-M6-5 — `examples/contracts/` was added.** The example plan referenced
+contract files that did not exist, so it validated against the schema but
+could not resolve. Three generic contracts make the example plan runnable
+end to end, which is what the v0 acceptance criterion asks for.

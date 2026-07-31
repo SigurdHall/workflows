@@ -1,0 +1,35 @@
+{
+  "schema_version": "workflows.task-contract.v1",
+  "contract_revision": 1,
+  "contract_type": "task",
+  "contract_id": "contract-parser",
+  "goal": "Make the tokenizer reject input it cannot represent, instead of producing a token stream that silently loses information.",
+  "scope": {
+    "allowed_paths": [
+      "src/parser/**"
+    ]
+  },
+  "protected": [
+    "tests/**"
+  ],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "statement": "The verification command exits zero."
+    },
+    {
+      "id": "AC-2",
+      "statement": "Malformed input is rejected with a specific error, not accepted.",
+      "negative_path": true
+    }
+  ],
+  "verification": {
+    "command": [
+      "python",
+      "-m",
+      "unittest"
+    ],
+    "expect_exit_code": 0,
+    "timeout_seconds": 600
+  }
+}
