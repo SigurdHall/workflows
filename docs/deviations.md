@@ -123,3 +123,30 @@ gates alone. They come back `requires_judgment`, named individually in the
 result's non-claims. Whether `number_traceable` deserves a real
 deterministic implementation is deferred to M7, where `assure` goal mode
 consumes it.
+
+## M3
+
+**D-M3-1 — Prompt composition and lens loading landed in M3, ahead of the
+M4 bullet that names the lens starter set.** The roadmap's M3 acceptance
+criterion is "composition determinism", which cannot be tested without a
+composer and something to compose. The lens *files* still arrive in M4;
+what M3 adds is the loader, the format check, and the composer.
+
+**D-M3-2 — Reviewer blindness is enforced by a function signature.** The
+charter tests it as a string assertion on the composed prompt. The prompt
+module goes further: `prompts.review` has no parameter through which worker
+or synthesizer dialogue could be passed, and a test asserts the signature
+itself. A string assertion catches a leak after someone adds the parameter;
+this catches the parameter.
+
+**D-M3-3 — Token usage for one call is the final usage figure, never a
+sum.** The charter forbids adding cumulative and per-turn figures together
+but does not say which to keep. The runner keeps the last and records how
+many usage events it saw, so an undercount is visible in the record rather
+than silent. Whether a multi-turn Codex call reports per-turn or cumulative
+figures is an open question, stated as such in `runners/README.md`.
+
+**D-M3-4 — The launcher is resolved with `shutil.which`.** Not in the
+roadmap, but the first live smoke test failed with `WinError 2` because an
+npm-installed CLI on Windows is a `.cmd` shim and `CreateProcess` does not
+apply PATHEXT to a bare name.
