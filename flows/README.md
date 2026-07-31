@@ -7,8 +7,8 @@ module per flow; this page is the catalog.
 |---|---|---|
 | `implement` | One worker, gates, review ladder, targeted repair | implemented |
 | `fanout` | N lens workers, one synthesizer, gates, review, repair | implemented |
-| `assure` | Review-only: candidate mode, and goal mode | candidate mode implemented |
-| `adjudicate` | Resolve two conflicting envelopes with evidence | not yet |
+| `assure` | Review-only: candidate mode, and goal mode | implemented |
+| `adjudicate` | Resolve two conflicting envelopes with evidence | implemented |
 | `benchmark` | Matrix runs against a planted-defect corpus | not yet |
 
 ```
@@ -17,6 +17,18 @@ python -m workflows.flow assure    --contract c.json --worktree . --dry-run
 python -m workflows.flow fanout    --contract c.json --worktree . --dry-run \
     --work-lens work/spec-fidelity --work-lens work/defensive-input
 ```
+
+`assure` switches to goal mode when the contract is a goal contract: the
+evidence-obligation gate settles what a deterministic check can settle, a
+model judges the rest against the contract's own rubric, and the verdict
+names which obligations fell in which half. An obligation met is not a goal
+achieved, and a goal-mode verdict says so.
+
+`adjudicate` takes two conflicting envelopes. The disputed claims are
+enumerated by code, not summarised by a model, and each must be settled by a
+probe the adjudicator ran; a claim no probe can settle comes back
+UNRESOLVED, which is an answer. The claims reach the adjudicator stripped of
+authorship, so nothing can be decided by which reviewer wrote it.
 
 Fan-out gives each worker its own worktree from the frozen base, so workers
 never share a write target and none of them can see what another did. The

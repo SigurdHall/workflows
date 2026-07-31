@@ -73,6 +73,7 @@ class GateResult:
     findings: tuple[dict[str, Any], ...] = ()
     non_claims: tuple[str, ...] = ()
     duration_ms: int | None = None
+    checks: tuple[dict[str, Any], ...] = ()
 
     @property
     def passed(self) -> bool:
@@ -94,6 +95,8 @@ class GateResult:
             document["detail"] = self.detail[:4000]
         if self.duration_ms is not None:
             document["duration_ms"] = self.duration_ms
+        if self.checks:
+            document["checks"] = list(self.checks)
         document["evidence"] = [item.to_document() for item in self.evidence]
         document["findings"] = list(self.findings)
         document["non_claims"] = list(self.non_claims) or [
@@ -623,7 +626,19 @@ def evidence_obligations(contract: dict[str, Any], context: GateContext) -> Gate
     evidence: list[Evidence] = []
     findings: list[dict[str, Any]] = []
     judged: list[str] = []
+    checks: list[dict[str, Any]] = []
     reason = "clean"
+
+    def record(identifier: str, result: str, code: str, detail: str, refs: list[str]) -> None:
+        checks.append(
+            {
+                "id": identifier,
+                "result": result,
+                "reason_code": code,
+                "evidence_refs": refs,
+                "detail": detail[:2000],
+            }
+        )
 
     for requirement in requirements:
         identifier = requirement["id"]
@@ -636,86 +651,66 @@ def evidence_obligations(contract: dict[str, Any], context: GateContext) -> Gate
             evidence.append(
                 Evidence(evidence_id, "citation", target or identifier, excerpt="requires judgment")
             )
+            # NOT_RUN, not INCONCLUSIVE: the gate did not run a check and
+            # fail to conclude — there is no check to run. Saying otherwise
+            # would let one unanswerable obligation block every goal verdict
+            # while hiding what the gate actually did settle.
+            record(
+                identifier,
+                "NOT_RUN",
+                "requires_judgment",
+                "no deterministic check can settle this obligation",
+                [evidence_id],
+            )
             continue
+
+        # One outcome per obligation. A shared reason variable here would make
+        # the first unmet obligation condemn every obligation after it.
+        path = context.worktree / target
+        outcome, detail, kind = "clean", "", "file"
 
         if check == "command_succeeds":
             outcome, detail = _run_obligation_command(target, context)
-            evidence.append(Evidence(evidence_id, "command", target, excerpt=detail))
-            if outcome != "clean":
-                reason = outcome
-                findings.append(
-                    _finding(
-                        f"evidence-{_slug(identifier)}",
-                        "HIGH",
-                        f"Evidence obligation {identifier!r} failed: {detail}",
-                        f"Satisfy {identifier!r} or restate the obligation.",
-                        [evidence_id],
-                        location=target,
-                    )
-                )
-            continue
-
-        path = context.worktree / target
-        if check == "artifact_exists":
+            kind = "command"
+        elif check == "artifact_exists":
             if not path.is_file():
-                reason = "missing_artifact"
-                detail = "the deliverable does not exist"
+                outcome, detail = "missing_artifact", "the deliverable does not exist"
             elif path.stat().st_size == 0:
-                reason = "empty_artifact"
-                detail = "the deliverable exists but is empty"
+                outcome, detail = "empty_artifact", "the deliverable exists but is empty"
             else:
                 detail = f"{path.stat().st_size} bytes"
-            evidence.append(Evidence(evidence_id, "file", target, excerpt=detail))
-            if reason in ("missing_artifact", "empty_artifact"):
-                findings.append(
-                    _finding(
-                        f"evidence-{_slug(identifier)}",
-                        "HIGH",
-                        f"Evidence obligation {identifier!r} is unmet: {detail}.",
-                        f"Produce {target!r}, or remove the obligation from the contract.",
-                        [evidence_id],
-                        location=target,
-                    )
-                )
-            continue
-
-        if check == "reference_resolves":
-            unresolved = _unresolved_references(path, context.worktree)
-            evidence.append(
-                Evidence(
-                    evidence_id,
-                    "file",
-                    target,
-                    excerpt="\n".join(unresolved) if unresolved else "all references resolve",
-                )
-            )
+        elif check == "reference_resolves":
             if not path.is_file():
-                reason = "missing_artifact"
-                findings.append(
-                    _finding(
-                        f"evidence-{_slug(identifier)}",
-                        "HIGH",
-                        f"Evidence obligation {identifier!r} points at {target!r}, which does not exist.",
-                        f"Produce {target!r}, or restate the obligation.",
-                        [evidence_id],
-                        location=target,
+                outcome, detail = "missing_artifact", "the deliverable does not exist"
+            else:
+                unresolved = _unresolved_references(path, context.worktree)
+                if unresolved:
+                    outcome = "unresolved_reference"
+                    detail = "references that resolve to nothing: " + ", ".join(
+                        unresolved[:10]
                     )
-                )
-            elif unresolved:
-                reason = "unresolved_reference"
-                findings.append(
-                    _finding(
-                        f"evidence-{_slug(identifier)}",
-                        "HIGH",
-                        f"{target!r} references paths that do not exist: {', '.join(unresolved[:10])}.",
-                        "Make every reference resolve, or remove the claim it supports.",
-                        [evidence_id],
-                        location=target,
-                    )
-                )
+                else:
+                    detail = "all references resolve"
+        else:
+            raise GateError(f"unsupported evidence check: {check!r}")
+
+        evidence.append(Evidence(evidence_id, kind, target, excerpt=detail))
+        if outcome == "clean":
+            record(identifier, "PASS", "clean", detail, [evidence_id])
             continue
 
-        raise GateError(f"unsupported evidence check: {check!r}")
+        reason = outcome
+        record(identifier, "FAIL", outcome, detail, [evidence_id])
+        findings.append(
+            _finding(
+                f"evidence-{_slug(identifier)}",
+                "HIGH",
+                f"Evidence obligation {identifier!r} is unmet: {detail}.",
+                f"Satisfy {identifier!r}, or restate the obligation in the contract.",
+                [evidence_id],
+                location=target,
+            )
+        )
 
     non_claims = [
         "Evidence obligations are weaker than hashes: this gate checks that "
@@ -736,24 +731,23 @@ def evidence_obligations(contract: dict[str, Any], context: GateContext) -> Gate
             evidence=tuple(evidence),
             findings=tuple(findings),
             non_claims=tuple(non_claims),
+            checks=tuple(checks),
         )
-    if judged:
-        return GateResult(
-            "evidence_obligations",
-            "INCONCLUSIVE",
-            "requires_judgment",
-            now,
-            detail=f"{len(judged)} obligation(s) need a reviewer",
-            evidence=tuple(evidence),
-            non_claims=tuple(non_claims),
-        )
+    # The gate passes on the half it can check and names the half it cannot.
+    # Reporting INCONCLUSIVE for the whole gate would overstate its scope: it
+    # did settle every obligation a deterministic check can settle.
     return GateResult(
         "evidence_obligations",
         "PASS",
         "clean",
         now,
+        detail=(
+            f"{len(checks) - len(judged)} obligation(s) checked, "
+            f"{len(judged)} left to judgment"
+        ),
         evidence=tuple(evidence),
         non_claims=tuple(non_claims),
+        checks=tuple(checks),
     )
 
 
@@ -893,14 +887,7 @@ def gate_envelope(
         "ladder_level": 0,
         "evidence": evidence,
         "criterion_results": [
-            {
-                "criterion_id": result.gate_id,
-                "result": result.result,
-                "evidence_refs": [item.id for item in result.evidence],
-                "negative_path_claim": False,
-                "note": f"{result.reason_code}: {result.detail}" if result.detail else result.reason_code,
-            }
-            for result in results
+            outcome for result in results for outcome in _criterion_outcomes(result)
         ],
         "findings": [finding for result in results for finding in result.findings],
         "non_claims": _envelope_non_claims(results),
@@ -909,6 +896,37 @@ def gate_envelope(
     if candidate is not None:
         envelope["candidate"] = candidate
     return envelope
+
+
+def _criterion_outcomes(result: GateResult) -> list[dict[str, Any]]:
+    """One outcome for the gate, plus one per named sub-check it settled.
+
+    A gate that checks several named obligations reports them individually,
+    which is what lets a goal contract's verdict separate what a gate checked
+    from what a model judged.
+    """
+    outcomes = [
+        {
+            "criterion_id": result.gate_id,
+            "result": result.result,
+            "evidence_refs": [item.id for item in result.evidence],
+            "negative_path_claim": False,
+            "note": f"{result.reason_code}: {result.detail}"
+            if result.detail
+            else result.reason_code,
+        }
+    ]
+    for check in result.checks:
+        outcomes.append(
+            {
+                "criterion_id": f"{result.gate_id}/{check['id']}",
+                "result": check["result"],
+                "evidence_refs": list(check.get("evidence_refs", [])),
+                "negative_path_claim": False,
+                "note": f"{check['reason_code']}: {check.get('detail', '')}"[:2000],
+            }
+        )
+    return outcomes
 
 
 def _envelope_non_claims(results: Sequence[GateResult]) -> list[str]:

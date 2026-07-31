@@ -347,7 +347,13 @@ class EvidenceObligationsGateTest(GateTestCase):
         )
         self.assertTrue(self.run_gate("evidence_obligations", contract=contract).passed)
 
-    def test_judgment_obligations_are_inconclusive_and_named(self) -> None:
+    def test_judgment_obligations_are_not_run_and_named(self) -> None:
+        """The gate settles the checkable half and says what it left alone.
+
+        NOT_RUN rather than INCONCLUSIVE: there is no check to run, so the
+        gate did not fail to conclude. Reporting otherwise would let one
+        unanswerable obligation block every goal verdict.
+        """
         contract = self.contract(
             [
                 {"id": "ER-1", "statement": "The guide exists.", "check": "artifact_exists", "target": "docs/guide.md"},
@@ -355,8 +361,22 @@ class EvidenceObligationsGateTest(GateTestCase):
             ]
         )
         result = self.run_gate("evidence_obligations", contract=contract)
-        self.assertEqual((result.result, result.reason_code), ("INCONCLUSIVE", "requires_judgment"))
+        self.assertEqual((result.result, result.reason_code), ("PASS", "clean"))
         self.assertTrue(any("ER-3" in claim for claim in result.non_claims))
+        outcomes = {check["id"]: check["result"] for check in result.checks}
+        self.assertEqual(outcomes, {"ER-1": "PASS", "ER-3": "NOT_RUN"})
+
+    def test_one_unmet_obligation_does_not_condemn_the_others(self) -> None:
+        contract = self.contract(
+            [
+                {"id": "ER-absent", "statement": "The report exists.", "check": "artifact_exists", "target": "docs/absent.md"},
+                {"id": "ER-present", "statement": "The guide exists.", "check": "artifact_exists", "target": "docs/guide.md"},
+            ]
+        )
+        result = self.run_gate("evidence_obligations", contract=contract)
+        outcomes = {check["id"]: check["result"] for check in result.checks}
+        self.assertEqual(outcomes, {"ER-absent": "FAIL", "ER-present": "PASS"})
+        self.assertEqual(len(result.findings), 1)
 
 
 class GateRunnerTest(GateTestCase):

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "attainment-result.schema.json",
+  "title": "Attainment result",
+  "description": "What a model judges about a goal contract. It carries only the judged half: whether the deliverables that exist actually meet the subgoals. What was checked deterministically came from the evidence-obligation gate, and re-asserting that here would count weak evidence twice. The grade is one of the contract's own rubric level ids — never a numeric score, which would reward a lenient reviewer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "attainment_level", "judged", "findings", "evidence", "non_claims"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.attainment-result.v1" },
+    "attainment_level": {
+      "description": "One of the level ids declared by this contract's attainment_rubric.",
+      "$ref": "core.defs.schema.json#/$defs/identifier"
+    },
+    "summary": { "type": "string", "maxLength": 4000 },
+    "judged": {
+      "description": "One entry per subgoal, each pointing at the deliverable that supports the judgment.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/judgment" }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "core.defs.schema.json#/$defs/finding" }
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "core.defs.schema.json#/$defs/evidence_ref" }
+    },
+    "non_claims": { "$ref": "core.defs.schema.json#/$defs/non_claims" }
+  },
+  "$defs": {
+    "judgment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subgoal_id", "met", "assessment", "evidence_refs"],
+      "properties": {
+        "subgoal_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "met": { "$ref": "core.defs.schema.json#/$defs/criterion_result" },
+        "assessment": { "type": "string", "minLength": 10, "maxLength": 4000 },
+        "evidence_refs": { "$ref": "core.defs.schema.json#/$defs/evidence_ref_list" }
+      }
+    }
+  }
+}

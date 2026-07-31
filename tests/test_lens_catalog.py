@@ -27,6 +27,8 @@ EXPECTED_REVIEW = {
     "review/metamorphic",
     "review/scope-integrity",
     "review/negative-path",
+    "review/adjudication",
+    "review/goal-attainment",
 }
 
 OUTPUT_SCHEMA = {"type": "object", "required": [], "properties": {}}

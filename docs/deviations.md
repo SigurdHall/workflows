@@ -122,7 +122,9 @@ skipping them would let a goal be declared attained on the strength of
 gates alone. They come back `requires_judgment`, named individually in the
 result's non-claims. Whether `number_traceable` deserves a real
 deterministic implementation is deferred to M7, where `assure` goal mode
-consumes it.
+consumes it. Superseded in M7 by D-M7-1: the gate reports NOT_RUN per
+obligation and PASS overall, because there is no check to run rather than a
+check that could not conclude.
 
 ## M3
 
@@ -281,3 +283,30 @@ than silently executed.
 contract files that did not exist, so it validated against the schema but
 could not resolve. Three generic contracts make the example plan runnable
 end to end, which is what the v0 acceptance criterion asks for.
+
+## M7
+
+**D-M7-1 — The `evidence_obligations` gate now reports PASS with NOT_RUN
+sub-checks, where it previously reported INCONCLUSIVE.** A goal contract's
+`manual_judgment` obligation has no check to run, so the gate did not fail
+to conclude — there was nothing to conclude. Reporting the whole gate
+INCONCLUSIVE overstated its scope and made every goal verdict unpassable
+while hiding what the gate did settle. The gate now passes on the half it
+checks and names the half it left to judgment, and the verdict carries the
+oracle-strength non-claims.
+
+**D-M7-2 — Two schemas the roadmap does not name: `adjudication-result`
+and `attainment-result`.** Same reason as M4's work/review results: a model
+returns a result and the driver builds the envelope, so each model role
+needs a schema for what it may return.
+
+**D-M7-3 — Adjudication matches findings on location and claim, ignoring
+severity.** Two reviewers naming the same defect at different severities
+are having a calibration disagreement, not raising two findings; keying on
+severity turned one dispute into two, neither of which was the real one.
+
+**D-M7-4 — Verdicts now aggregate criterion results from every envelope,
+not only from review envelopes.** Goal mode needs the gate's per-obligation
+outcomes and the model's per-subgoal judgments side by side, which is what
+"separating checked from judged" means in practice. Task flows gain gate
+outcomes in their verdicts, which is an improvement rather than a cost.

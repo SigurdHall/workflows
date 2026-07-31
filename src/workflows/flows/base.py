@@ -553,8 +553,6 @@ def verdict(
             if step_id in superseded and copied.get("status") == "OPEN":
                 copied["status"] = "RESOLVED"
             findings.append(copied)
-        if envelope.get("step_kind") != "review":
-            continue
         for outcome in envelope.get("criterion_results", []):
             if outcome["criterion_id"] in claimed or step_id in superseded:
                 continue
@@ -569,7 +567,7 @@ def verdict(
             )
 
     extra_non_claims = list(extra_non_claims)
-    if context.dry_run and result in ("PASS", "FAIL"):
+    if context.dry_run:
         # A dry run calls no model, so it concludes nothing — in either
         # direction. The one real signal a dry run carries is a gate finding,
         # because gates do run; without one, the verdict is INCONCLUSIVE.
@@ -579,7 +577,7 @@ def verdict(
             for finding in envelope.get("findings", [])
             if finding.get("status") == "OPEN"
         ]
-        if not real:
+        if result in ("PASS", "FAIL") and not real:
             result = "INCONCLUSIVE"
         extra_non_claims.insert(
             0,

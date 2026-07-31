@@ -146,6 +146,68 @@ def synthesis(
     )
 
 
+def adjudication(
+    *,
+    contract: dict[str, Any],
+    lens: Lens,
+    output_schema: dict[str, Any],
+    candidate: str,
+    disputed: Sequence[dict[str, Any]],
+) -> str:
+    """An adjudication prompt: the disputed claims, and nothing about who made them.
+
+    The claims arrive stripped of their authorship. Knowing which reviewer
+    said what invites deciding by reputation, and the point of adjudication
+    is that each claim is settled by a probe.
+    """
+    return _assemble(
+        [
+            _header("adjudication"),
+            _section("Contract", _json(contract)),
+            _section("Candidate", candidate),
+            _section(
+                "Disputed claims",
+                _json(list(disputed))
+                + "\n\nSettle each claim with a probe you run. A claim no probe "
+                "can settle is UNRESOLVED; that is an answer, not a failure.",
+            ),
+            _lens_section(lens),
+            _output_section(output_schema),
+        ]
+    )
+
+
+def attainment(
+    *,
+    contract: dict[str, Any],
+    lens: Lens,
+    output_schema: dict[str, Any],
+    checked: Sequence[dict[str, Any]],
+    focus_hint: str | None = None,
+) -> str:
+    """A goal-attainment prompt.
+
+    What a gate already checked is passed in as *checked*, so the reviewer
+    knows not to spend its judgment there — and so it cannot present a
+    deterministic result as its own finding.
+    """
+    return _assemble(
+        [
+            _header("attainment"),
+            _section("Goal contract", _json(contract)),
+            _section(
+                "Already checked deterministically",
+                _json(list(checked))
+                + "\n\nThese were settled by a gate. Do not re-assert them as "
+                "judgments: an obligation met is not a goal achieved.",
+            ),
+            _lens_section(lens),
+            _focus_section(focus_hint),
+            _output_section(output_schema),
+        ]
+    )
+
+
 def repair(
     *,
     contract: dict[str, Any],

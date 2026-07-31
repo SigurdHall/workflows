@@ -23,6 +23,12 @@
     "detail": { "type": "string", "minLength": 1, "maxLength": 4000 },
     "checked_at": { "$ref": "core.defs.schema.json#/$defs/timestamp" },
     "duration_ms": { "type": "integer", "minimum": 0 },
+    "checks": {
+      "description": "Sub-results, when one gate settles several named obligations. This is what keeps a goal contract's checked half machine-readable and separable from its judged half.",
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/check" }
+    },
     "evidence": {
       "type": "array",
       "maxItems": 500,
@@ -36,6 +42,18 @@
     "non_claims": { "$ref": "core.defs.schema.json#/$defs/non_claims" }
   },
   "$defs": {
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result", "reason_code"],
+      "properties": {
+        "id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "result": { "$ref": "core.defs.schema.json#/$defs/criterion_result" },
+        "reason_code": { "$ref": "#/$defs/reason_code" },
+        "evidence_refs": { "$ref": "core.defs.schema.json#/$defs/evidence_ref_list" },
+        "detail": { "type": "string", "maxLength": 2000 }
+      }
+    },
     "reason_code": {
       "title": "Gate reason code",
       "description": "Why the gate reached its result, in machine-readable form. A missing command is 'command_not_found', never 'not_applicable' and never a pass — the distinction is the point.",

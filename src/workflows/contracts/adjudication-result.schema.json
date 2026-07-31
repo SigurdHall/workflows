@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adjudication-result.schema.json",
+  "title": "Adjudication result",
+  "description": "How one disputed claim was settled. Adjudication is not a vote on which reviewer argued better: every disputed claim must be probed, and a claim no probe can settle is UNRESOLVED — which is a correct answer, not a failure to decide.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "resolutions", "evidence", "non_claims"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.adjudication-result.v1" },
+    "summary": { "type": "string", "maxLength": 4000 },
+    "resolutions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/resolution" }
+    },
+    "evidence": {
+      "description": "Every probe executed while adjudicating. A resolution that cites none is a re-assertion.",
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "core.defs.schema.json#/$defs/evidence_ref" }
+    },
+    "non_claims": { "$ref": "core.defs.schema.json#/$defs/non_claims" }
+  },
+  "$defs": {
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "resolution", "rationale", "evidence_refs"],
+      "properties": {
+        "claim_id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "resolution": {
+          "description": "UPHELD: the claim stands. REJECTED: it does not. UNRESOLVED: no probe can settle it, and saying so is the honest answer.",
+          "type": "string",
+          "enum": ["UPHELD", "REJECTED", "UNRESOLVED"]
+        },
+        "rationale": { "type": "string", "minLength": 10, "maxLength": 4000 },
+        "evidence_refs": { "$ref": "core.defs.schema.json#/$defs/evidence_ref_list" },
+        "severity": { "$ref": "core.defs.schema.json#/$defs/severity" }
+      }
+    }
+  }
+}

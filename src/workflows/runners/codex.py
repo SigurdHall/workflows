@@ -320,9 +320,14 @@ def stub_for(schema: dict[str, Any], registry: Any = None, document: Any = None)
     the wrong shape exactly where the shared definitions live — and a dry
     run whose stub fails validation tells you nothing about the flow.
     """
+    if document is None:
+        # The document is what same-document "#/$defs/..." references resolve
+        # against; losing it one level down turns a valid schema into an
+        # unresolvable reference.
+        document = schema
     if "$ref" in schema:
         registry = registry if registry is not None else schema_module.default_registry()
-        target, owner = schema_module._resolve_ref(schema["$ref"], document or schema, registry)
+        target, owner = schema_module._resolve_ref(schema["$ref"], document, registry)
         merged = {key: value for key, value in schema.items() if key != "$ref"}
         return stub_for({**target, **merged}, registry, owner)
     kind = schema.get("type")
