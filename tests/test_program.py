@@ -218,6 +218,183 @@ class ResolveTest(ProgramTestCase):
             self.assertIn(expected, described)
 
 
+class ReviewRegressionTest(ProgramTestCase):
+    """Counter-examples an independent review of M6 found reaching execution."""
+
+    def test_a_write_scope_the_contract_does_not_match_is_rejected(self) -> None:
+        """The checkpoint showed disjoint scopes while the gates allowed both
+        tasks to write the same file."""
+        plan = self.plan(
+            [
+                {
+                    "task_id": "task-a",
+                    "contract_path": self.contract("a", ["src/example/shared.py"]),
+                    "flow": "implement",
+                    "write_scope": ["src/example/a-only.py"],
+                },
+                {
+                    "task_id": "task-b",
+                    "contract_path": self.contract("b", ["src/example/shared.py"]),
+                    "flow": "implement",
+                    "write_scope": ["src/example/b-only.py"],
+                },
+            ]
+        )
+        with self.assertRaises(program.ProgramError) as ctx:
+            program.resolve(plan)
+        self.assertIn("the contract does not match", str(ctx.exception))
+
+    def test_two_tasks_sharing_one_contract_are_rejected(self) -> None:
+        shared = self.contract("shared", ["src/example/**"])
+        plan = self.plan(
+            [
+                {
+                    "task_id": "task-a",
+                    "contract_path": shared,
+                    "flow": "implement",
+                    "write_scope": ["src/example/**"],
+                },
+                {
+                    "task_id": "task-b",
+                    "contract_path": shared,
+                    "flow": "implement",
+                    "write_scope": ["src/example/**"],
+                },
+            ]
+        )
+        with self.assertRaises(program.ProgramError) as ctx:
+            program.resolve(plan)
+        self.assertIn("are one task", str(ctx.exception))
+
+    def test_a_base_that_does_not_exist_is_rejected_at_resolve(self) -> None:
+        plan = self.plan(
+            [
+                {
+                    "task_id": "task-a",
+                    "contract_path": self.contract("a", ["src/example/**"]),
+                    "flow": "implement",
+                    "write_scope": ["src/example/**"],
+                }
+            ],
+            base=[{"repo_id": "target", "commit": "e" * 40}],
+        )
+        with self.assertRaises(program.ProgramError) as ctx:
+            program.resolve(plan, worktree=self.repo.path)
+        self.assertIn("does not exist", str(ctx.exception))
+
+        code, _, err = cli(*self.args(plan, "--approve", "--dry-run"))
+        self.assertEqual(code, program.EXIT_USAGE)
+        self.assertFalse((self.repo.path / "runs").exists(), "nothing ran")
+
+    def test_one_task_raising_does_not_take_down_the_batch(self) -> None:
+        plan = self.three_task_plan()
+        resolved = program.resolve(plan)
+        engine = program.Program(
+            resolved,
+            worktree=self.repo.path,
+            runs_root=self.repo.path / "runs",
+            program_run_id="p-crash",
+            dry_run=True,
+            registry=self.registry,
+        )
+        original = engine.task_worktree
+
+        def explode(task):
+            if task.task_id == "task-report":
+                raise RuntimeError("git worktree add failed (128)")
+            return original(task)
+
+        engine.task_worktree = explode
+        report = engine.execute()
+
+        by_id = {task["task_id"]: task for task in report["tasks"]}
+        self.assertEqual(len(by_id), 3, "every task is reported")
+        self.assertEqual(by_id["task-report"]["state"], "FAILED")
+        self.assertIn("git worktree add failed", by_id["task-report"]["note"])
+        self.assertEqual(by_id["task-parser"]["state"], "COMPLETED")
+        self.assertEqual(by_id["task-canonical"]["state"], "COMPLETED")
+        errors = check_document(report, program.REPORT_SCHEMA, registry=self.registry)
+        self.assertEqual([str(e) for e in errors], [])
+
+    def test_a_budget_breach_stops_before_the_rest_of_a_parallel_batch(self) -> None:
+        tasks = json.loads(self.three_task_plan().read_text(encoding="utf-8"))["tasks"]
+        plan = self.plan(
+            tasks,
+            concurrency={"max_parallel_tasks": 2},
+            budgets={"tokens": 1, "wall_clock_seconds": 3600},
+        )
+        resolved = program.resolve(plan)
+
+        from dataclasses import replace as _replace
+
+        from workflows.runners.codex import DryRunner
+
+        class Spender:
+            name = "spender"
+
+            def __init__(self, inner):
+                self.inner = inner
+
+            def invoke(self, call):
+                result = self.inner.invoke(call)
+                return _replace(
+                    result,
+                    telemetry=_replace(
+                        result.telemetry,
+                        tokens=type(result.telemetry.tokens)(
+                            new_input=5000, cached_input=10, output=100
+                        ),
+                    ),
+                )
+
+        engine = program.Program(
+            resolved,
+            worktree=self.repo.path,
+            runs_root=self.repo.path / "runs",
+            program_run_id="p-early-stop",
+            dry_run=True,
+            registry=self.registry,
+            runner_factory=lambda: Spender(DryRunner(registry=self.registry)),
+        )
+        report = engine.execute()
+        started = [task for task in report["tasks"] if task["state"] != "BLOCKED"]
+        self.assertLess(
+            len(started),
+            3,
+            "a breach must stop the program before every task in the batch runs",
+        )
+        self.assertEqual(report["stops"][0]["kind"], "token_budget")
+
+    def test_the_wall_clock_budget_does_not_restart_on_resume(self) -> None:
+        plan = self.three_task_plan()
+        resolved = program.resolve(plan)
+        first = program.Program(
+            resolved,
+            worktree=self.repo.path,
+            runs_root=self.repo.path / "runs",
+            program_run_id="p-clock-resume",
+            dry_run=True,
+            registry=self.registry,
+        )
+        first.prepare()
+
+        manifest = first.run.read_manifest()
+        manifest["created_at"] = "2020-01-01T00:00:00Z"
+        first.run.write_manifest(manifest)
+
+        second = program.Program(
+            resolved,
+            worktree=self.repo.path,
+            runs_root=self.repo.path / "runs",
+            program_run_id="p-clock-resume",
+            dry_run=True,
+            registry=self.registry,
+        )
+        report = second.execute()
+        self.assertEqual(report["stops"][0]["kind"], "wall_clock_budget")
+        self.assertEqual(report["result"], "BLOCKED")
+
+
 class CheckpointTest(ProgramTestCase):
     def test_without_approval_nothing_runs(self) -> None:
         plan = self.three_task_plan()

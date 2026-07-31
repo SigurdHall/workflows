@@ -305,6 +305,27 @@ severity.** Two reviewers naming the same defect at different severities
 are having a calibration disagreement, not raising two findings; keying on
 severity turned one dispute into two, neither of which was the real one.
 
+**D-M7-5 — Four rules added after an independent review of M6, none of
+them in the roadmap.** All four were executed counter-examples:
+
+1. A plan's `write_scope` was never compared against its contract's own
+   `scope.allowed_paths` — the field the gate actually enforces. Two tasks
+   could show disjoint scopes at the checkpoint while both contracts
+   allowed writing the same file. The two must now state the same scope,
+   and two tasks may not share a contract file.
+2. A base commit that does not exist passed the checkpoint and crashed
+   during execution. `resolve` now checks it against the repository.
+3. Any exception outside `FlowError` took down the whole batch, losing the
+   verdicts of tasks that had already finished and writing no report at
+   all. A task that raises is now a failed task, not a failed program, and
+   worktree creation is serialized behind a lock as its own docstring
+   always required.
+4. Budgets were only checked after an entire parallel batch finished, so a
+   width of N could overrun a budget N-fold before noticing, and a resumed
+   run restarted its wall-clock budget from zero. Results are now consumed
+   as they arrive, and elapsed time accumulates from when the run was
+   created.
+
 **D-M7-4 — Verdicts now aggregate criterion results from every envelope,
 not only from review envelopes.** Goal mode needs the gate's per-obligation
 outcomes and the model's per-subgoal judgments side by side, which is what

@@ -24,10 +24,12 @@ import argparse
 import hashlib
 import json
 import sys
+import threading
 import time
 import tomllib
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -117,7 +119,9 @@ def digest_of(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def resolve(plan_path: Path, *, registry: Any = None) -> ResolvedPlan:
+def resolve(
+    plan_path: Path, *, registry: Any = None, worktree: Path | None = None
+) -> ResolvedPlan:
     """Validate everything that can be validated before anyone approves.
 
     Scope overlap, a missing contract, a contract that does not validate, a
@@ -132,8 +136,21 @@ def resolve(plan_path: Path, *, registry: Any = None) -> ResolvedPlan:
             "the plan does not validate:\n" + "\n".join(f"  {e}" for e in errors[:20])
         )
 
+    if worktree is not None:
+        missing = [
+            entry["commit"]
+            for entry in plan["base"]
+            if not gitcmd.rev_exists(worktree, entry["commit"])
+        ]
+        if missing:
+            raise ProgramError(
+                "the plan freezes a base that does not exist in this "
+                "repository: " + ", ".join(missing)
+            )
+
     root = plan_path.parent
     default_repo = plan["base"][0]["repo_id"] if len(plan["base"]) == 1 else None
+    seen_contracts: dict[str, str] = {}
     tasks: list[ResolvedTask] = []
     for entry in plan["tasks"]:
         contract_path = (root / entry["contract_path"]).resolve()
@@ -154,6 +171,33 @@ def resolve(plan_path: Path, *, registry: Any = None) -> ResolvedPlan:
             raise ProgramError(
                 f"the contract for task {entry['task_id']!r} does not validate:\n"
                 + "\n".join(f"  {e}" for e in contract_errors[:20])
+            )
+
+        # Two tasks sharing a contract share its scope, whatever the plan's
+        # write_scope fields say. If two tasks touch the same files, they are
+        # one task.
+        key = str(contract_path)
+        if key in seen_contracts:
+            raise ProgramError(
+                f"tasks {seen_contracts[key]!r} and {entry['task_id']!r} name "
+                f"the same contract ({entry['contract_path']}), so they share "
+                "its scope. Tasks that share a write target are one task."
+            )
+        seen_contracts[key] = entry["task_id"]
+
+        # The plan's write_scope is what a human approves; the contract's
+        # allowed_paths is what the gate enforces. Left unchecked they drift,
+        # and the checkpoint shows disjoint scopes while the gates permit two
+        # tasks to write the same file.
+        allowed = contract.get("scope", {}).get("allowed_paths")
+        if allowed is not None and sorted(entry["write_scope"]) != sorted(allowed):
+            raise ProgramError(
+                f"task {entry['task_id']!r} declares a write scope the "
+                "contract does not match.\n"
+                f"  plan:     {', '.join(sorted(entry['write_scope']))}\n"
+                f"  contract: {', '.join(sorted(allowed))}\n"
+                "The plan states what the human approves and the contract "
+                "states what the gate enforces; they must be the same scope."
             )
         tasks.append(
             ResolvedTask(
@@ -255,6 +299,17 @@ def _token_totals(records: list[dict[str, Any]]) -> dict[str, int]:
     return totals
 
 
+def _elapsed_since(timestamp: str | None) -> float:
+    """Seconds between a recorded UTC timestamp and now, never negative."""
+    if not timestamp:
+        return 0.0
+    try:
+        created = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    return max(0.0, (datetime.now(timezone.utc) - created).total_seconds())
+
+
 def budget_spend(totals: dict[str, int]) -> int:
     """What a token budget counts.
 
@@ -292,6 +347,7 @@ class Program:
         self.stops: list[dict[str, Any]] = []
         self.started = time.monotonic()
         self.report_path = "reports/1.json"
+        self._worktree_lock = threading.Lock()
 
     # -- setup ------------------------------------------------------------
 
@@ -325,20 +381,29 @@ class Program:
                 },
             )
         else:
-            recorded = self.run.read_manifest().get("plan_ref", {}).get("digest")
+            manifest = self.run.read_manifest()
+            recorded = manifest.get("plan_ref", {}).get("digest")
             if recorded and recorded != self.resolved.digest:
                 raise ProgramError(
                     "this program run was created against a different plan. A "
                     "plan is frozen at run start: resume with the original, or "
                     "start a new run id."
                 )
+            # A wall-clock budget that restarts on every resume is not a
+            # budget: a killed program could run indefinitely by being
+            # resumed. Elapsed time accumulates from when the run was created.
+            self.started -= _elapsed_since(manifest.get("created_at"))
 
     def task_worktree(self, task: ResolvedTask) -> Path:
         path = self.run.root / "worktrees" / task.task_id
-        if path.exists():
-            return path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        gitcmd.add_worktree(self.worktree, path, self.resolved.base_for(task.repo_id))
+        # Serialized on purpose: git worktree creation writes the repository's
+        # refs, and doing it from several threads is how you meet
+        # packed-refs.lock.
+        with self._worktree_lock:
+            if path.exists():
+                return path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            gitcmd.add_worktree(self.worktree, path, self.resolved.base_for(task.repo_id))
         return path
 
     # -- one task ---------------------------------------------------------
@@ -350,7 +415,7 @@ class Program:
 
         if directory.exists and (directory.root / "verdict.json").is_file():
             verdict = directory.read_artifact("verdict.json")
-            return TaskOutcome(
+            return TaskOutcome(  # already finished; a resume repeats nothing
                 task=task,
                 run_id=run_id,
                 state="COMPLETED",
@@ -360,6 +425,31 @@ class Program:
                 note="already completed; not re-run",
             )
 
+        try:
+            return self._run_task(task, run_id, directory, started)
+        except Exception as exc:  # noqa: BLE001 — one task may not take down the batch
+            # A task that raises is a task that failed, not a program that
+            # crashed. Letting it propagate would lose the verdicts of every
+            # task that finished beside it, and write no report at all. This
+            # covers worktree creation too, which is where the first real
+            # crash came from.
+            return TaskOutcome(
+                task=task,
+                run_id=run_id,
+                state="FAILED",
+                result="BLOCKED",
+                tokens=_token_totals(directory.telemetry() if directory.exists else []),
+                duration_ms=int((time.monotonic() - started) * 1000),
+                note=f"the task could not run: {type(exc).__name__}: {exc}",
+            )
+
+    def _run_task(
+        self,
+        task: ResolvedTask,
+        run_id: str,
+        directory: RunDirectory,
+        started: float,
+    ) -> TaskOutcome:
         worktree = self.task_worktree(task)
         frozen = self.resolved.base_for(task.repo_id)
         if not directory.exists:
@@ -398,18 +488,7 @@ class Program:
             max_parallel_workers=self.max_parallel_workers,
             worker_worktrees=directory.root / "worktrees",
         )
-        try:
-            verdict = FLOW_RUNNERS[task.flow](context)
-        except FlowError as exc:
-            return TaskOutcome(
-                task=task,
-                run_id=run_id,
-                state="FAILED",
-                result="BLOCKED",
-                tokens=_token_totals(directory.telemetry()),
-                duration_ms=int((time.monotonic() - started) * 1000),
-                note=f"the flow could not run: {exc}",
-            )
+        verdict = FLOW_RUNNERS[task.flow](context)
         return TaskOutcome(
             task=task,
             run_id=run_id,
@@ -431,31 +510,45 @@ class Program:
         width = max(1, int(self.resolved.plan["concurrency"]["max_parallel_tasks"]))
         pending = list(self.resolved.tasks)
 
-        while pending:
-            if self.stops:
-                break
-            batch, pending = pending[:width], pending[width:]
-            if width == 1 or len(batch) == 1:
-                results = [self.run_task(task) for task in batch]
-            else:
-                with ThreadPoolExecutor(max_workers=width) as pool:
-                    results = list(pool.map(self.run_task, batch))
-            for outcome in results:
-                outcomes.append(outcome)
-                for key in totals:
-                    totals[key] += outcome.tokens.get(key, 0)
-                self.run.record_step(
-                    {
-                        "step_id": outcome.task.task_id,
-                        "kind": "flow",
-                        "state": outcome.state,
-                        "attempt": 1,
-                        "task_id": outcome.task.task_id,
-                        "finished_at": utc_now(),
-                        "note": outcome.note or outcome.result,
-                    }
-                )
-                self._check_signals(outcome, totals, budgets)
+        def land(outcome: TaskOutcome) -> None:
+            outcomes.append(outcome)
+            for key in totals:
+                totals[key] += outcome.tokens.get(key, 0)
+            self.run.record_step(
+                {
+                    "step_id": outcome.task.task_id,
+                    "kind": "flow",
+                    "state": outcome.state,
+                    "attempt": 1,
+                    "task_id": outcome.task.task_id,
+                    "finished_at": utc_now(),
+                    "note": outcome.note or outcome.result,
+                }
+            )
+            self._check_signals(outcome, totals, budgets)
+
+        if width == 1:
+            while pending and not self.stops:
+                land(self.run_task(pending.pop(0)))
+        else:
+            # Results are consumed as they arrive, not batch by batch. Waiting
+            # for a whole batch lets every task in it finish before the first
+            # budget breach is even noticed — with a width of 64 that is 64
+            # tasks past the limit.
+            with ThreadPoolExecutor(max_workers=width) as pool:
+                futures: dict[Any, ResolvedTask] = {}
+
+                def fill() -> None:
+                    while pending and len(futures) < width and not self.stops:
+                        task = pending.pop(0)
+                        futures[pool.submit(self.run_task, task)] = task
+
+                fill()
+                while futures:
+                    finished = next(as_completed(list(futures)))
+                    futures.pop(finished)
+                    land(finished.result())
+                    fill()
 
         for task in pending:
             outcomes.append(
@@ -671,7 +764,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run(args: argparse.Namespace) -> int:
-    resolved = resolve(args.plan)
+    resolved = resolve(args.plan, worktree=args.worktree.resolve())
     print(describe(resolved))
     if not args.approve:
         print(
@@ -710,7 +803,7 @@ def _resume(args: argparse.Namespace) -> int:
             f"the plan this run was created from is gone: {plan_path}. A plan "
             "is frozen at run start, and a resume continues that plan."
         )
-    resolved = resolve(plan_path)
+    resolved = resolve(plan_path, worktree=args.worktree.resolve())
     if resolved.digest != source["digest"]:
         raise ProgramError(
             "the plan file has changed since this run was created. A plan is "
