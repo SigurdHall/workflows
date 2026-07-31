@@ -1,0 +1,213 @@
+{
+  "schema_version": "workflows.defect-manifest.v1",
+  "corpus_id": "tier-a-v0",
+  "description": "The v0 Tier A benchmark corpus: six small, synthetic tasks spanning the bi-analytics and agent-engineering domain families, each with two planted defects from the base and domain-extension taxonomies (docs/test-charter.md, docs/benchmark-domains.md). Every planted defect survives a green happy-path unittest run in its own seed tree, which is the property this corpus exists to measure.",
+  "tasks": [
+    {
+      "task_id": "measure-variance",
+      "archetype": "Measure logic",
+      "domain": "bi-analytics",
+      "tier": "A",
+      "contract_path": "contracts/measure-variance.json",
+      "seed_path": "seeds/measure-variance",
+      "defects": [
+        {
+          "defect_id": "measure-variance-d1",
+          "defect_class": 11,
+          "class_name": "Aggregation misuse",
+          "location": "measure-variance/src/variance.py:42",
+          "severity": "HIGH",
+          "triggering_probe": "Recompute the portfolio percentage as sum(actual)/sum(budget) across all departments and compare it against portfolio_percent_variance(rows); the two disagree because the function returns the mean of each department's own percent variance instead of recomputing the ratio from summed totals.",
+          "description": "portfolio_percent_variance averages the per-department percent variances (a mean of ratios) instead of recomputing the percentage from summed budget and summed actual (a ratio of sums). The two methods agree only when every department has the same budget, which is not the case in the fixture, so the reported portfolio percentage is silently wrong for any unequal weighting of departments.",
+          "survives": [
+            "the happy-path unit test, whose expected value was hand-computed with the same mean-of-ratios method",
+            "any check that only inspects a single department's percent variance in isolation"
+          ]
+        },
+        {
+          "defect_id": "measure-variance-d2",
+          "defect_class": 14,
+          "class_name": "Blank/zero conflation",
+          "location": "measure-variance/src/variance.py:18",
+          "severity": "HIGH",
+          "triggering_probe": "Parse a CSV row whose budget field is blank and confirm the row is excluded from budget totals (or explicitly flagged) rather than folded in as a 0.0 budget; then confirm the portfolio total does not silently change shape because of it.",
+          "description": "read_rows converts a blank budget field straight to 0.0 with no distinction between 'no budget was set' and 'the budget is zero'. A department with a genuinely missing budget is silently treated as having a zero budget, which changes any total or ratio computed over the budget column without raising a finding.",
+          "survives": [
+            "the happy-path unit test, which never asserts on totals that include the blank-budget department",
+            "the per-row safe-division guard in percent_variance, which only prevents a crash and does not surface the conflation"
+          ]
+        }
+      ]
+    },
+    {
+      "task_id": "star-schema-split",
+      "archetype": "Semantic model construction",
+      "domain": "bi-analytics",
+      "tier": "A",
+      "contract_path": "contracts/star-schema-split.json",
+      "seed_path": "seeds/star-schema-split",
+      "defects": [
+        {
+          "defect_id": "star-schema-split-d1",
+          "defect_class": 6,
+          "class_name": "Blank identity",
+          "location": "star-schema-split/src/split.py:21",
+          "severity": "MEDIUM",
+          "triggering_probe": "Run build_dimension over a row whose customer_id is a single whitespace character and confirm it is rejected rather than accepted as a distinct dimension member.",
+          "description": "build_dimension keys its deduplication dictionary on the raw customer_id field with no stripping or blank check. A row whose customer_id is whitespace-only passes the 'row has a region' filter and is accepted as its own dimension member, distinct from a properly blank or absent key.",
+          "survives": [
+            "the happy-path unit test, which only checks that dimension keys are unique amongst themselves, not that they are non-blank"
+          ]
+        },
+        {
+          "defect_id": "star-schema-split-d2",
+          "defect_class": 10,
+          "class_name": "Reference integrity",
+          "location": "star-schema-split/src/split.py:31",
+          "severity": "HIGH",
+          "triggering_probe": "Compute the set difference (fact customer ids) minus (dimension customer ids) after running build_fact and build_dimension over the fixture extract, and confirm it is empty.",
+          "description": "build_dimension silently excludes any row whose region is blank, while build_fact carries every row's customer_id forward unchanged. A fact row whose customer had no region on file therefore references a customer_id absent from the dimension table, and nothing in the split flags the dangling reference.",
+          "survives": [
+            "the happy-path unit test, which only checks that every dimension id appears somewhere in the fact table, not the reverse direction that would catch the dangling fact row"
+          ]
+        }
+      ]
+    },
+    {
+      "task_id": "snapshot-idempotence",
+      "archetype": "Data transformation",
+      "domain": "bi-analytics",
+      "tier": "A",
+      "contract_path": "contracts/snapshot-idempotence.json",
+      "seed_path": "seeds/snapshot-idempotence",
+      "defects": [
+        {
+          "defect_id": "snapshot-idempotence-d1",
+          "defect_class": 8,
+          "class_name": "Stale state",
+          "location": "snapshot-idempotence/src/snapshot.py:20",
+          "severity": "CRITICAL",
+          "triggering_probe": "Call apply_snapshot for an entity with as_of='2026-07-02', then call it again for the same entity with the earlier as_of='2026-07-01', and confirm the stored snapshot's as_of stays '2026-07-02'.",
+          "description": "apply_snapshot always overwrites the stored snapshot for an entity with whatever it is called with, regardless of the incoming as_of date. A late-arriving or reprocessed older snapshot silently replaces an already-stored newer one, with no comparison against the existing as_of date.",
+          "survives": [
+            "the happy-path unit test, which only ever calls apply_snapshot with dates in increasing order"
+          ]
+        },
+        {
+          "defect_id": "snapshot-idempotence-d2",
+          "defect_class": 2,
+          "class_name": "Order-dependent canonicalization",
+          "location": "snapshot-idempotence/src/snapshot.py:10",
+          "severity": "MEDIUM",
+          "triggering_probe": "Call digest() once on a list of row dicts in a given order and again on the same rows reordered, and confirm the two digests are equal.",
+          "description": "digest() hashes json.dumps(rows) directly, which is sensitive to the order of the rows list. Two snapshots that carry the exact same set of rows produce different digests purely because the rows arrived in a different order, defeating any downstream idempotence check that compares digests to decide whether a snapshot actually changed.",
+          "survives": [
+            "the happy-path unit test, which only ever hashes the same list object twice and never reorders it"
+          ]
+        }
+      ]
+    },
+    {
+      "task_id": "triage-router",
+      "archetype": "Information triage",
+      "domain": "agent-engineering",
+      "tier": "A",
+      "contract_path": "contracts/triage-router.json",
+      "seed_path": "seeds/triage-router",
+      "defects": [
+        {
+          "defect_id": "triage-router-d1",
+          "defect_class": 4,
+          "class_name": "Open contract",
+          "location": "triage-router/src/router.py:28",
+          "severity": "MEDIUM",
+          "triggering_probe": "Call with_custom_rule('urgent', 'escalation') where 'escalation' is not a member of CATEGORIES, classify a matching item, and confirm the result is rejected rather than returned as a valid classification.",
+          "description": "with_custom_rule accepts any category string and prepends it to the routing rules with no check against the closed CATEGORIES tuple. A caller can introduce a rule that routes items into a category the contract never declared, and classify() will happily return it as if it were valid.",
+          "survives": [
+            "the happy-path unit test, which only exercises with_custom_rule with a category that is already a member of CATEGORIES"
+          ]
+        },
+        {
+          "defect_id": "triage-router-d2",
+          "defect_class": 17,
+          "class_name": "Trigger mismatch",
+          "location": "triage-router/src/router.py:8",
+          "severity": "MEDIUM",
+          "triggering_probe": "Classify the phrase \"My phone won't hold a charge since the last update\" (a device/bug report) and confirm it is not routed to billing.",
+          "description": "The 'charge' keyword rule is meant to catch billing language ('I was overcharged', 'refund my charge') but matches any text containing the substring 'charge', including device-battery bug reports that have nothing to do with billing. The rule over-matches phrasing that belongs to the bug category.",
+          "survives": [
+            "the happy-path unit test, which only exercises 'charge' against unambiguous billing phrasing and never against the ambiguous battery/bug phrasing"
+          ]
+        }
+      ]
+    },
+    {
+      "task_id": "field-extraction",
+      "archetype": "Structured extraction",
+      "domain": "agent-engineering",
+      "tier": "A",
+      "contract_path": "contracts/field-extraction.json",
+      "seed_path": "seeds/field-extraction",
+      "defects": [
+        {
+          "defect_id": "field-extraction-d1",
+          "defect_class": 1,
+          "class_name": "Type conflation",
+          "location": "field-extraction/src/extract.py:21",
+          "severity": "HIGH",
+          "triggering_probe": "Parse a record with active=true and assert isinstance(record['active'], bool) rather than merely checking membership in a set of accepted spellings.",
+          "description": "parse_record never converts the 'active' field to an actual bool; it stays the raw string 'true' or 'false'. validate_record's membership check `record['active'] not in (True, False, 'true', 'false')` treats the raw string as equivalent to the boolean type the closed schema declares, so a record whose 'active' field is the string 'true' passes validation as if it satisfied a bool field, even though isinstance(record['active'], bool) is False.",
+          "survives": [
+            "the happy-path unit test, which only checks that validate_record returns True and never inspects the runtime type of the 'active' field"
+          ]
+        },
+        {
+          "defect_id": "field-extraction-d2",
+          "defect_class": 7,
+          "class_name": "Degenerate input",
+          "location": "field-extraction/src/extract.py:28",
+          "severity": "MEDIUM",
+          "triggering_probe": "Call parse_records on a text body that contains only a '#'-prefixed header line and no key=value pairs, and confirm the result is rejected or explicitly flagged as empty rather than silently accepted as a valid (empty) record set.",
+          "description": "parse_records returns an empty list whenever every line is blank or a comment, with no distinction between 'this file legitimately has zero records' and 'this file never had any parsable content'. A header-only or comment-only input is accepted as a valid, if empty, record set with no finding raised.",
+          "survives": [
+            "the happy-path unit test, which only feeds parse_records inputs that contain at least one well-formed record"
+          ]
+        }
+      ]
+    },
+    {
+      "task_id": "instruction-set",
+      "archetype": "Skill/instruction authoring",
+      "domain": "agent-engineering",
+      "tier": "A",
+      "contract_path": "contracts/instruction-set.json",
+      "seed_path": "seeds/instruction-set",
+      "defects": [
+        {
+          "defect_id": "instruction-set-d1",
+          "defect_class": 20,
+          "class_name": "Unverifiable imperative",
+          "location": "instruction-set/src/instructions.md:5",
+          "severity": "LOW",
+          "triggering_probe": "For rule 3 ('Be appropriately empathetic in tone throughout the exchange'), ask what observable signal a checker or reviewer could inspect to decide pass or fail; none of checker.py's functions evaluate it and no other rule supplies a concrete criterion for it.",
+          "description": "Rule 3 instructs the reader to be 'appropriately empathetic in tone', which has no observable, falsifiable success criterion: nothing in the case record, the response text, or checker.py can be inspected to decide whether the rule was followed. It is unverifiable by construction, unlike the other rules, which each name a concrete, checkable action.",
+          "survives": [
+            "the happy-path unit test, which only checks structural properties of the rule list (count, non-emptiness, a keyword match) and never evaluates whether a rule's content is checkable"
+          ]
+        },
+        {
+          "defect_id": "instruction-set-d2",
+          "defect_class": 18,
+          "class_name": "Instruction conflict",
+          "location": "instruction-set/src/instructions.md:7",
+          "severity": "HIGH",
+          "triggering_probe": "Take a refund of 30 currency units (under the 50-unit threshold in rule 4) and ask whether rule 4 and rule 5 can both hold for it; rule 4 says no manager sign-off is required, rule 5 says all refunds require sign-off. Confirm the file contains no reconciling language (an exception clause, an 'except as noted above') between the two rules.",
+          "description": "Rule 4 carves out an explicit exemption ('Refunds up to 50 currency units may be approved without manager sign-off'), and rule 5, two lines later in the same file, states unconditionally that 'All refunds require manager sign-off before processing.' The two rules directly contradict each other for any refund at or under the threshold, and neither rule references or qualifies the other.",
+          "survives": [
+            "the happy-path unit test, which checks that both rules load as non-empty text but never cross-checks one rule's content against another's"
+          ]
+        }
+      ]
+    }
+  ]
+}

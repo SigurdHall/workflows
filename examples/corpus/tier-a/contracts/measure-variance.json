@@ -1,0 +1,42 @@
+{
+  "schema_version": "workflows.task-contract.v1",
+  "contract_revision": 1,
+  "contract_type": "task",
+  "contract_id": "contract-measure-variance",
+  "goal": "Compute budget-vs-actual variance and percent variance for a small portfolio of departments read from an in-repo CSV extract, so that a portfolio-level percentage is trustworthy and not just a per-department convenience number.",
+  "scope": {
+    "allowed_paths": [
+      "measure-variance/src/**"
+    ]
+  },
+  "protected": [
+    "measure-variance/tests/**"
+  ],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "statement": "The verification command exits zero."
+    },
+    {
+      "id": "AC-2",
+      "statement": "The portfolio percent variance is recomputed from summed budget and actual figures, not averaged from per-department percentages."
+    },
+    {
+      "id": "AC-3",
+      "statement": "A department with a missing (blank) budget is never silently folded into totals as a zero budget.",
+      "negative_path": true
+    }
+  ],
+  "verification": {
+    "command": [
+      "python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "measure-variance"
+    ],
+    "expect_exit_code": 0,
+    "timeout_seconds": 600
+  }
+}

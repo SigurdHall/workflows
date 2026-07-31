@@ -1,0 +1,6 @@
+order_id,customer_id,customer_name,region,amount
+1,c1,Acme Traders,north,100
+2,c2,Blue Harbor,south,200
+3,c1,Acme Traders,north,150
+4, ,Unnamed Account,west,50
+5,c9,Ghost Client,,75

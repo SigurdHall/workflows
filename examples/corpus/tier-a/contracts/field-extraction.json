@@ -1,0 +1,43 @@
+{
+  "schema_version": "workflows.task-contract.v1",
+  "contract_revision": 1,
+  "contract_type": "task",
+  "contract_id": "contract-field-extraction",
+  "goal": "Extract typed fields from semicolon-delimited text lines into a closed schema, rejecting anything that does not actually satisfy the declared type of each field.",
+  "scope": {
+    "allowed_paths": [
+      "field-extraction/src/**"
+    ]
+  },
+  "protected": [
+    "field-extraction/tests/**"
+  ],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "statement": "The verification command exits zero."
+    },
+    {
+      "id": "AC-2",
+      "statement": "A record is only considered valid when its 'active' field is an actual boolean, not the raw string 'true' or 'false'.",
+      "negative_path": true
+    },
+    {
+      "id": "AC-3",
+      "statement": "A text body that contains only headers or comments and no parsable record yields an explicit empty result, never a silently accepted record set.",
+      "negative_path": true
+    }
+  ],
+  "verification": {
+    "command": [
+      "python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "field-extraction"
+    ],
+    "expect_exit_code": 0,
+    "timeout_seconds": 600
+  }
+}

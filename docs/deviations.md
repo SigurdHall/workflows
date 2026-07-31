@@ -331,3 +331,45 @@ not only from review envelopes.** Goal mode needs the gate's per-obligation
 outcomes and the model's per-subgoal judgments side by side, which is what
 "separating checked from judged" means in practice. Task flows gain gate
 outcomes in their verdicts, which is an improvement rather than a cost.
+
+## M8
+
+**D-M8-1 — Detection is matched by file path, not by defect identity.** The
+charter asks for reviewer recall and precision per class without saying how
+a finding is matched to a planted defect. Path matching over-credits a
+reviewer that flags the right file for the wrong reason; the report says so
+in its own non-claims, and per-class recall rather than the aggregate is the
+number the summary highlights.
+
+**D-M8-2 — Unmatched findings are reported as unmatched, never as false
+positives.** The charter says "reviewer recall/precision". A finding that
+matches no planted defect may be a real defect the corpus author did not
+plant, and calling it a false positive would train the system to reward
+reviewers that find only what is expected. Precision in the strict sense is
+therefore not reported; the raw count is, with the caveat attached.
+
+**D-M8-3 — The corpus ships Tier A only, and covers 12 of the 20 defect
+classes.** The charter asks for Tier A archetypes from both domain families
+and defect classes 1-20. What ships is six tasks across both families —
+`measure-variance`, `star-schema-split`, `snapshot-idempotence`,
+`triage-router`, `field-extraction`, `instruction-set` — planting classes
+1, 2, 4, 6, 7, 8, 10, 11, 14, 17, 18 and 20. Classes 3, 5, 9, 12, 13, 15,
+16 and 19 are not yet planted. Tier B and C enter with the
+known-worse-variant technique, which needs `assure` goal mode to have run
+against real work first. Every class absent from the corpus is unmeasured,
+and the benchmark report says so rather than implying coverage.
+
+**D-M8-5 — The verification gate removes untracked files its own command
+created.** Not in the roadmap. Found by the first real end-to-end program
+run: running a test suite writes `__pycache__` into the worktree, and the
+scope and protected-hash gates then reported it as a change the worker
+made — in a dry run where no worker had been called at all. A gate must not
+be blamed on the candidate. Only untracked files that did not exist before
+the command are removed.
+
+**D-M8-4 — A benchmark cell is a program run, not a new orchestrator.** The
+roadmap says "reusing program infrastructure"; a cell writes a generated
+plan into the work root, resolves it against the materialized corpus
+repository, and runs the program. Generated plans never land in the corpus
+directory: a corpus is an input, and a run's inputs are not written back
+into it.

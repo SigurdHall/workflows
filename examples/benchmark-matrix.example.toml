@@ -1,0 +1,33 @@
+# A benchmark matrix: one cell per {model, effort, worker count} combination.
+#
+# Run it against a corpus with:
+#     python -m workflows.benchmark run examples/corpus/tier-a/corpus.json \
+#         --matrix examples/benchmark-matrix.example.toml \
+#         --work-root <somewhere outside this repository> --dry-run
+#
+# Model names are provider-unresolved role bindings, not literal model ids:
+# a deployment profile maps them. Keep the cells few and the differences
+# deliberate — a matrix is an experiment, and every extra cell is a real
+# cost with no hypothesis attached.
+
+[[cell]]
+model = "worker-class"
+effort = "medium"
+worker_count = 1
+
+[[cell]]
+model = "worker-class"
+effort = "high"
+worker_count = 1
+
+# Fan-out width is the variable the repository's "3-5 workers" default rests
+# on. It is asserted, not measured, until a cell like this one measures it.
+[[cell]]
+model = "worker-class"
+effort = "medium"
+worker_count = 3
+
+[[cell]]
+model = "strongest-same-family"
+effort = "high"
+worker_count = 1

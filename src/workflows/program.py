@@ -332,7 +332,9 @@ class Program:
         registry: Any = None,
         runner_factory: Any = None,
         max_parallel_workers: int = 1,
+        profile: Profile | None = None,
     ) -> None:
+        self.profile = profile or Profile()
         self.resolved = resolved
         self.worktree = worktree
         self.runs_root = runs_root
@@ -478,7 +480,7 @@ class Program:
             run=directory,
             run_id=run_id,
             runner=self.runner_factory(),
-            profile=Profile(),
+            profile=self.profile,
             escalation=self.resolved.escalation,
             registry=self.registry,
             dry_run=self.dry_run,
@@ -763,6 +765,17 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
 
 
+def _exit_code(report: dict[str, Any]) -> int:
+    """A dry run never reports PASS, so judging it by that alone would make
+    every dry run look like a failure. INCONCLUSIVE is the success shape of a
+    dry run; FAIL and BLOCKED still are not."""
+    if report["result"] == "PASS":
+        return EXIT_OK
+    if report["dry_run"] and report["result"] == "INCONCLUSIVE":
+        return EXIT_OK
+    return EXIT_STOPPED
+
+
 def _run(args: argparse.Namespace) -> int:
     resolved = resolve(args.plan, worktree=args.worktree.resolve())
     print(describe(resolved))
@@ -785,7 +798,7 @@ def _run(args: argparse.Namespace) -> int:
     report = program.execute()
     print("\n" + summarize(report))
     print(f"  report: {program.run.root / program.report_path}")
-    return EXIT_OK if report["result"] == "PASS" else EXIT_STOPPED
+    return _exit_code(report)
 
 
 def _resume(args: argparse.Namespace) -> int:
@@ -820,7 +833,7 @@ def _resume(args: argparse.Namespace) -> int:
     report = program.execute()
     print(summarize(report))
     print(f"  report: {program.run.root / program.report_path}")
-    return EXIT_OK if report["result"] == "PASS" else EXIT_STOPPED
+    return _exit_code(report)
 
 
 if __name__ == "__main__":

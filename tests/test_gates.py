@@ -243,6 +243,46 @@ class VerificationGateTest(GateTestCase):
         result = self.run_gate("verification_command", contract=contract)
         self.assertEqual((result.result, result.reason_code), ("FAIL", "timeout"))
 
+    def test_the_gate_removes_what_its_own_command_created(self) -> None:
+        """A gate must not be blamed on the candidate.
+
+        Running a test suite writes __pycache__ into the worktree; without
+        this, the next scope and protected-hash gates report it as a change
+        the worker made — which is how a dry run with no worker at all
+        failed a protected-path check the first time this ran end to end.
+        """
+        contract = dict(
+            CONTRACT,
+            verification={
+                "command": [
+                    sys.executable,
+                    "-c",
+                    "import pathlib; "
+                    "p = pathlib.Path('tests/__pycache__'); p.mkdir(parents=True, exist_ok=True); "
+                    "(p / 'artifact.pyc').write_text('x')",
+                ],
+                "expect_exit_code": 0,
+            },
+        )
+        result = self.run_gate("verification_command", contract=contract)
+        self.assertTrue(result.passed)
+        self.assertFalse(
+            (self.repo.path / "tests" / "__pycache__" / "artifact.pyc").exists()
+        )
+        self.assertTrue(any(item.id == "verification/artifacts" for item in result.evidence))
+        # The gates that follow now see a clean worktree.
+        self.assertTrue(self.run_gate("protected_hash").passed)
+        self.assertTrue(self.run_gate("scope").passed)
+
+    def test_it_never_removes_a_file_that_was_already_there(self) -> None:
+        self.repo.write("src/example/scratch.txt", "written by the worker\n")
+        contract = dict(
+            CONTRACT,
+            verification={"command": [sys.executable, "-c", "pass"], "expect_exit_code": 0},
+        )
+        self.run_gate("verification_command", contract=contract)
+        self.assertTrue((self.repo.path / "src" / "example" / "scratch.txt").is_file())
+
     def test_a_contract_without_verification_is_an_author_error(self) -> None:
         with self.assertRaises(gates.GateError):
             gates.verification_command({"scope": {}}, self.context())

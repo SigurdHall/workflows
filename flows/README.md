@@ -9,7 +9,7 @@ module per flow; this page is the catalog.
 | `fanout` | N lens workers, one synthesizer, gates, review, repair | implemented |
 | `assure` | Review-only: candidate mode, and goal mode | implemented |
 | `adjudicate` | Resolve two conflicting envelopes with evidence | implemented |
-| `benchmark` | Matrix runs against a planted-defect corpus | not yet |
+| `benchmark` | Matrix runs against a planted-defect corpus | implemented |
 
 ```
 python -m workflows.flow implement --contract c.json --worktree . --dry-run
@@ -29,6 +29,24 @@ enumerated by code, not summarised by a model, and each must be settled by a
 probe the adjudicator ran; a claim no probe can settle comes back
 UNRESOLVED, which is an answer. The claims reach the adjudicator stripped of
 authorship, so nothing can be decided by which reviewer wrote it.
+
+`benchmark` is the only flow that turns this repository's defaults into
+measurements. It materializes a corpus with planted defects and a hidden
+answer key, runs a matrix of {model, effort, worker count} cells through the
+program level, and reports cost against detection:
+
+```
+python -m workflows.benchmark run <corpus.json> --matrix matrix.toml \
+    --work-root <outside this repository> --dry-run
+python -m workflows.benchmark score <corpus.json> <program-run-root>
+```
+
+Recall is reported per defect class, because one aggregate number hides
+exactly the classes that escape. Findings that match no planted defect are
+counted as *unmatched*, never as false positives: the corpus plants a known
+set of defects, not every defect in the fixture, and calling an unmatched
+finding wrong would train the system to reward reviewers that find only what
+is expected.
 
 Fan-out gives each worker its own worktree from the frozen base, so workers
 never share a write target and none of them can see what another did. The

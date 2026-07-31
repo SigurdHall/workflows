@@ -137,7 +137,14 @@ def add_worktree(repo: Path | str, path: Path | str, commit: str) -> None:
 
     Worktree creation writes to the repository's refs, so callers create them
     one at a time: parallel creation is how you meet `packed-refs.lock`.
+
+    Stale registrations are pruned first. A run directory deleted by hand —
+    or lost with the machine it lived on — leaves git holding a registration
+    for a directory that is gone, and every later attempt to recreate it
+    fails with "missing but already registered worktree". Pruning only
+    removes registrations whose directories no longer exist.
     """
+    run(repo, "worktree", "prune", check=False)
     run(repo, "worktree", "add", "--detach", "--quiet", str(path), commit)
 
 

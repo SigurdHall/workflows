@@ -1,0 +1,43 @@
+{
+  "schema_version": "workflows.task-contract.v1",
+  "contract_revision": 1,
+  "contract_type": "task",
+  "contract_id": "contract-star-schema-split",
+  "goal": "Split a flat sales extract into a customer dimension and an orders fact table, so that every fact row's customer key resolves to a real, non-blank dimension member.",
+  "scope": {
+    "allowed_paths": [
+      "star-schema-split/src/**"
+    ]
+  },
+  "protected": [
+    "star-schema-split/tests/**"
+  ],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "statement": "The verification command exits zero."
+    },
+    {
+      "id": "AC-2",
+      "statement": "Every dimension member has a non-blank customer identifier once whitespace is stripped.",
+      "negative_path": true
+    },
+    {
+      "id": "AC-3",
+      "statement": "Every fact row's customer key resolves to a dimension member; a fact row referencing an unknown customer is flagged, not silently kept.",
+      "negative_path": true
+    }
+  ],
+  "verification": {
+    "command": [
+      "python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "star-schema-split"
+    ],
+    "expect_exit_code": 0,
+    "timeout_seconds": 600
+  }
+}

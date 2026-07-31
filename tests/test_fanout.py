@@ -181,6 +181,27 @@ class FanoutDryRunTest(FanoutTestCase):
         for path in root.iterdir():
             self.assertEqual(gitcmd.head_commit(path), self.base)
 
+    def test_a_deleted_run_directory_does_not_block_a_new_run(self) -> None:
+        """git keeps the registration when the directory disappears, and every
+        later attempt to recreate it fails until the stale entry is pruned."""
+        import shutil
+
+        first = self.context(DryRunner(registry=self.registry), run_id="run-gone")
+        fanout.run(first)
+        shutil.rmtree(first.worker_worktrees, ignore_errors=True)
+
+        second = self.context(DryRunner(registry=self.registry), run_id="run-again")
+        second.worker_worktrees.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(second.worker_worktrees)
+        # Point the second run at the same paths the first one registered.
+        second = self.context(
+            DryRunner(registry=self.registry),
+            run_id="run-again",
+            worker_worktrees=first.worker_worktrees,
+        )
+        verdict = fanout.run(second)
+        self.assertEqual(verdict["flow"], "fanout")
+
     def test_the_run_directory_and_verdict_validate(self) -> None:
         context = self.context(DryRunner(registry=self.registry))
         verdict = fanout.run(context)

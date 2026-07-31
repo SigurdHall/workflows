@@ -133,8 +133,28 @@ semantic rules no schema keyword can express.
 
 ## Status
 
-v0: concept layer complete (this README, `concepts/`, `docs/decisions/`).
-Implementation proceeds per [docs/roadmap.md](docs/roadmap.md).
+v0. All five flows, the program level, the gates, the runner and the
+benchmark tooling are implemented and tested; every milestone in
+[docs/roadmap.md](docs/roadmap.md) is complete, and every departure from it
+is recorded in [docs/deviations.md](docs/deviations.md).
+
+What that does and does not mean:
+
+- **Verified.** The test suite and the content policy are green in CI on
+  Python 3.12 and 3.13, and the validator is proved installable by building
+  a wheel and running it from a directory with no checkout in it.
+- **Dry-run tested.** Flows and programs materialize worktrees, composed
+  prompts, gate results, run manifests and verdicts end to end, and resume
+  without repeating a completed step. A dry run calls no model and never
+  reports PASS.
+- **Live-tested once.** The Codex runner has made one real call, documented
+  with its telemetry in [runners/README.md](runners/README.md). No flow has
+  yet run against a live model, so nothing here is calibrated: the worker
+  counts, the ladder thresholds and the lens set are asserted, and the
+  benchmark flow exists to replace those assertions with measurements.
+- **Declared but not implemented.** Ladder level 4 needs a second runner
+  family. Until one exists it never runs, and every verdict says so in its
+  non-claims rather than skipping it silently.
 
 ## Content policy
 

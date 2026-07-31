@@ -457,6 +457,7 @@ def verification_command(contract: dict[str, Any], context: GateContext) -> Gate
     timeout = verification.get("timeout_seconds", context.command_timeout)
     cwd = context.worktree / verification.get("cwd", ".")
     printable = " ".join(command)
+    before = set(gitcmd.untracked_files(context.worktree))
 
     try:
         completed = subprocess.run(
@@ -492,6 +493,7 @@ def verification_command(contract: dict[str, Any], context: GateContext) -> Gate
             non_claims=("Nothing was verified: the command never ran.",),
         )
     except subprocess.TimeoutExpired:
+        _clean_command_artifacts(context.worktree, before)
         return GateResult(
             "verification_command",
             "FAIL",
@@ -511,6 +513,7 @@ def verification_command(contract: dict[str, Any], context: GateContext) -> Gate
             non_claims=("Nothing was verified: the command did not finish.",),
         )
 
+    removed = _clean_command_artifacts(context.worktree, before)
     tail = (completed.stdout + completed.stderr).strip()[-3000:]
     evidence = (
         Evidence(
@@ -521,6 +524,15 @@ def verification_command(contract: dict[str, Any], context: GateContext) -> Gate
             excerpt=tail,
         ),
     )
+    if removed:
+        evidence = evidence + (
+            Evidence(
+                "verification/artifacts",
+                "log",
+                "files created by the verification command and removed again",
+                excerpt="\n".join(removed[:100]),
+            ),
+        )
     if completed.returncode != expected:
         return GateResult(
             "verification_command",
@@ -759,6 +771,41 @@ def _load_document(path: Path) -> Any:
     if path.suffix.lower() == ".toml":
         return tomllib.loads(text)
     return json.loads(text)
+
+
+def _clean_command_artifacts(worktree: Path, before: set[str]) -> list[str]:
+    """Remove untracked files the verification command created.
+
+    A gate must not be blamed on the candidate. Running a test suite writes
+    `__pycache__`, coverage files and build output into the worktree, and the
+    scope and protected-hash gates then report those as changes the worker
+    made — which is how a dry run with no worker at all failed a
+    protected-path check the first time this was run end to end.
+
+    Only files that (a) are untracked, (b) did not exist before the command,
+    and (c) live inside the worktree are removed. Nothing tracked and
+    nothing pre-existing is touched.
+    """
+    removed: list[str] = []
+    for relative in sorted(set(gitcmd.untracked_files(worktree)) - before):
+        target = worktree / relative
+        try:
+            if target.is_file():
+                target.unlink()
+                removed.append(relative)
+        except OSError:
+            continue  # a locked file is not worth failing a gate over
+    if removed:
+        # Directories left empty by the removals (a __pycache__ shell).
+        for relative in removed:
+            parent = (worktree / relative).parent
+            try:
+                while parent != worktree and not any(parent.iterdir()):
+                    parent.rmdir()
+                    parent = parent.parent
+            except OSError:
+                break
+    return removed
 
 
 def _run_obligation_command(target: str, context: GateContext) -> tuple[str, str]:

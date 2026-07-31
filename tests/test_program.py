@@ -407,7 +407,8 @@ class CheckpointTest(ProgramTestCase):
     def test_the_checkpoint_fires_once_per_program_not_once_per_task(self) -> None:
         plan = self.three_task_plan()
         code, out, err = cli(*self.args(plan, "--approve", "--dry-run", "--run-id", "p1"))
-        self.assertEqual(code, program.EXIT_STOPPED, out + err)
+        # A dry run concludes nothing, so INCONCLUSIVE is its success shape.
+        self.assertEqual(code, program.EXIT_OK, out + err)
         self.assertEqual(out.count("single checkpoint"), 0)
         report = json.loads(
             (self.repo.path / "runs" / "p1" / "reports" / "1.json").read_text(encoding="utf-8")

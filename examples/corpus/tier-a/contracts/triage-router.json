@@ -1,0 +1,43 @@
+{
+  "schema_version": "workflows.task-contract.v1",
+  "contract_revision": 1,
+  "contract_type": "task",
+  "contract_id": "contract-triage-router",
+  "goal": "Classify incoming triage items against a closed category contract, so that every accepted classification is one of the declared categories and every keyword rule only owns the phrasing it should.",
+  "scope": {
+    "allowed_paths": [
+      "triage-router/src/**"
+    ]
+  },
+  "protected": [
+    "triage-router/tests/**"
+  ],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "statement": "The verification command exits zero."
+    },
+    {
+      "id": "AC-2",
+      "statement": "A routing rule cannot be added that targets a category outside the closed CATEGORIES set.",
+      "negative_path": true
+    },
+    {
+      "id": "AC-3",
+      "statement": "A keyword rule does not match phrasing that belongs to a different category.",
+      "negative_path": true
+    }
+  ],
+  "verification": {
+    "command": [
+      "python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "triage-router"
+    ],
+    "expect_exit_code": 0,
+    "timeout_seconds": 600
+  }
+}

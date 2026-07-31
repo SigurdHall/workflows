@@ -1,0 +1,43 @@
+{
+  "schema_version": "workflows.task-contract.v1",
+  "contract_revision": 1,
+  "contract_type": "task",
+  "contract_id": "contract-snapshot-idempotence",
+  "goal": "Append a daily snapshot to a per-entity snapshot store so that a snapshot's as-of date decides precedence and its digest depends only on the set of rows, not the order they arrived in.",
+  "scope": {
+    "allowed_paths": [
+      "snapshot-idempotence/src/**"
+    ]
+  },
+  "protected": [
+    "snapshot-idempotence/tests/**"
+  ],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "statement": "The verification command exits zero."
+    },
+    {
+      "id": "AC-2",
+      "statement": "A snapshot with an older as-of date never overwrites an already-stored snapshot with a newer as-of date.",
+      "negative_path": true
+    },
+    {
+      "id": "AC-3",
+      "statement": "The digest of the same set of rows is identical regardless of the order the rows are given in.",
+      "negative_path": true
+    }
+  ],
+  "verification": {
+    "command": [
+      "python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "snapshot-idempotence"
+    ],
+    "expect_exit_code": 0,
+    "timeout_seconds": 600
+  }
+}

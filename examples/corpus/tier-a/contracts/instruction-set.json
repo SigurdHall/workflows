@@ -1,0 +1,43 @@
+{
+  "schema_version": "workflows.task-contract.v1",
+  "contract_revision": 1,
+  "contract_type": "task",
+  "contract_id": "contract-instruction-set",
+  "goal": "Fix a small refund-handling instruction file so that every rule has an observable success criterion and no rule silently contradicts another rule in the same file.",
+  "scope": {
+    "allowed_paths": [
+      "instruction-set/src/**"
+    ]
+  },
+  "protected": [
+    "instruction-set/tests/**"
+  ],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "statement": "The verification command exits zero."
+    },
+    {
+      "id": "AC-2",
+      "statement": "Every rule in the instruction file has an observable, checkable success criterion.",
+      "negative_path": true
+    },
+    {
+      "id": "AC-3",
+      "statement": "No rule in the instruction file silently contradicts another rule in the same file.",
+      "negative_path": true
+    }
+  ],
+  "verification": {
+    "command": [
+      "python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "instruction-set"
+    ],
+    "expect_exit_code": 0,
+    "timeout_seconds": 600
+  }
+}
