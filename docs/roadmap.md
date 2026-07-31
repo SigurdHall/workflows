@@ -3,8 +3,11 @@
 Implementation milestones for v0. Each milestone lists acceptance
 criteria; a milestone is done when all criteria pass locally
 (`python -m unittest` + `python scripts/check_content_policy.py`) and in
-CI. Conventions: Python 3.12+, stdlib only, English, schemas per the
-README's conventions section.
+CI, **and** the mandatory test cases for that milestone in
+[test-charter.md](test-charter.md) are implemented and green. The
+charter is the floor, not the ceiling — the implementer adds their own
+cases on top. Conventions: Python 3.12+, stdlib only, English, schemas
+per the README's conventions section.
 
 ## M0 — Foundations
 
