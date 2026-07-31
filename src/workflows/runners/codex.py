@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
+from workflows import schema as schema_module
 from workflows.runners import RunnerCall, RunnerResult, Telemetry, TokenUsage
 
 NAME = "codex"
@@ -200,6 +201,7 @@ class DryRunner:
 
     name: str = "dry"
     calls: list[RunnerCall] = field(default_factory=list)
+    registry: Any = None
 
     def invoke(self, call: RunnerCall) -> RunnerResult:
         self.calls.append(call)
@@ -215,7 +217,7 @@ class DryRunner:
                 tokens=TokenUsage(),
                 lens_id=call.lens_id,
             ),
-            output=stub_for(call.output_schema),
+            output=stub_for(call.output_schema, self.registry),
             detail="dry run: the prompt was composed and recorded, no model was called",
         )
 
@@ -293,8 +295,18 @@ def _optional_int(value: Any) -> int | None:
     return int(value)
 
 
-def stub_for(schema: dict[str, Any]) -> Any:
-    """A minimal document satisfying the required parts of an output schema."""
+def stub_for(schema: dict[str, Any], registry: Any = None, document: Any = None) -> Any:
+    """A minimal document satisfying the required parts of an output schema.
+
+    References are resolved, because a stub that ignored ``$ref`` would be
+    the wrong shape exactly where the shared definitions live — and a dry
+    run whose stub fails validation tells you nothing about the flow.
+    """
+    if "$ref" in schema:
+        registry = registry if registry is not None else schema_module.default_registry()
+        target, owner = schema_module._resolve_ref(schema["$ref"], document or schema, registry)
+        merged = {key: value for key, value in schema.items() if key != "$ref"}
+        return stub_for({**target, **merged}, registry, owner)
     kind = schema.get("type")
     if isinstance(kind, list):
         kind = kind[0]
@@ -305,13 +317,13 @@ def stub_for(schema: dict[str, Any]) -> Any:
     if kind == "object":
         properties = schema.get("properties", {})
         return {
-            name: stub_for(properties.get(name, {}))
+            name: stub_for(properties.get(name, {}), registry, document)
             for name in schema.get("required", [])
         }
     if kind == "array":
         item = schema.get("items", {})
         minimum = schema.get("minItems", 0)
-        return [stub_for(item) for _ in range(minimum)]
+        return [stub_for(item, registry, document) for _ in range(minimum)]
     if kind == "integer" or kind == "number":
         return schema.get("minimum", 0)
     if kind == "boolean":

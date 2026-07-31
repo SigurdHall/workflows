@@ -178,11 +178,17 @@ def invoke_validated(
     call: RunnerCall,
     *,
     registry: SchemaRegistry | None = None,
+    extra_validator: Any = None,
 ) -> ValidatedResult:
     """Invoke, validate, and retry once at most.
 
     A model that answers with the wrong shape twice has told you something;
     a driver that keeps asking has not.
+
+    ``extra_validator`` is a callable ``(output) -> Sequence[ValidationError]``
+    for rules a schema cannot express — a review that claims something
+    invalid is rejected without a logged probe is *not* a valid review
+    result, and the retry is where that gets said.
     """
     attempts: list[RunnerResult] = []
     errors: tuple[ValidationError, ...] = ()
@@ -206,6 +212,8 @@ def invoke_validated(
         errors = tuple(
             validate(result.output, call.output_schema, registry=registry)
         )
+        if not errors and extra_validator is not None:
+            errors = tuple(extra_validator(result.output))
         if not errors:
             return ValidatedResult(
                 status="COMPLETED",

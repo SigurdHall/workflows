@@ -108,8 +108,10 @@ class RunDirectoryTest(unittest.TestCase):
             gates.GateResult("scope", "PASS", "clean", NOW),
             gates.GateResult("protected_hash", "FAIL", "protected_modified", NOW),
         ]
-        written = gates.write_gate_results(results, self.run, attempt=1)
-        self.assertEqual(written, ["gates/scope.1.json", "gates/protected_hash.1.json"])
+        written = gates.write_gate_results(results, self.run, step_id="gates-pre", attempt=1)
+        self.assertEqual(
+            written, ["gates/gates-pre/scope.1.json", "gates/gates-pre/protected_hash.1.json"]
+        )
         for relative, result in zip(written, results):
             document = self.run.read_artifact(relative)
             self.assertEqual(document["gate_id"], result.gate_id)
@@ -119,10 +121,29 @@ class RunDirectoryTest(unittest.TestCase):
     def test_a_second_attempt_does_not_overwrite_the_first(self) -> None:
         from workflows import gates
 
-        gates.write_gate_results([gates.GateResult("scope", "FAIL", "out_of_scope_change", NOW)], self.run, attempt=1)
-        gates.write_gate_results([gates.GateResult("scope", "PASS", "clean", NOW)], self.run, attempt=2)
-        self.assertEqual(self.run.read_artifact("gates/scope.1.json")["result"], "FAIL")
-        self.assertEqual(self.run.read_artifact("gates/scope.2.json")["result"], "PASS")
+        gates.write_gate_results(
+            [gates.GateResult("scope", "FAIL", "out_of_scope_change", NOW)],
+            self.run,
+            step_id="gates-post",
+            attempt=1,
+        )
+        gates.write_gate_results(
+            [gates.GateResult("scope", "PASS", "clean", NOW)],
+            self.run,
+            step_id="gates-post",
+            attempt=2,
+        )
+        self.assertEqual(self.run.read_artifact("gates/gates-post/scope.1.json")["result"], "FAIL")
+        self.assertEqual(self.run.read_artifact("gates/gates-post/scope.2.json")["result"], "PASS")
+
+    def test_the_same_gate_in_different_steps_does_not_collide(self) -> None:
+        from workflows import gates
+
+        result = gates.GateResult("base_identity", "PASS", "clean", NOW)
+        gates.write_gate_results([result], self.run, step_id="gates-pre")
+        gates.write_gate_results([result], self.run, step_id="gates-post-r0")
+        self.assertTrue((self.run.gates / "gates-pre" / "base_identity.1.json").is_file())
+        self.assertTrue((self.run.gates / "gates-post-r0" / "base_identity.1.json").is_file())
 
     def test_no_temporary_file_survives_a_manifest_write(self) -> None:
         self.run.record_step({"step_id": "s", "kind": "gate", "state": "PENDING", "attempt": 1})

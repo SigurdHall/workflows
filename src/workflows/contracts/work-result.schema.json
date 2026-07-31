@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-result.schema.json",
+  "title": "Work result",
+  "description": "What a producing model returns. It describes what was done and what was decided; the candidate itself is the worktree, and the driver builds the envelope. A model never hand-writes protocol data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "summary", "changed_paths", "decisions", "non_claims"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.work-result.v1" },
+    "summary": {
+      "description": "What was built, in the worker's own words. Not the interface between steps — the envelope is.",
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 4000
+    },
+    "changed_paths": {
+      "description": "Every path the worker believes it changed. The scope gate checks the worktree rather than trusting this, but a disagreement between the two is itself a signal.",
+      "type": "array",
+      "maxItems": 200,
+      "uniqueItems": true,
+      "items": { "$ref": "core.defs.schema.json#/$defs/relative_path" }
+    },
+    "decisions": {
+      "description": "Choices the contract did not settle. An ambiguity resolved silently is the one that surprises a reviewer.",
+      "type": "array",
+      "maxItems": 50,
+      "items": { "$ref": "#/$defs/decision" }
+    },
+    "open_questions": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+    },
+    "non_claims": { "$ref": "core.defs.schema.json#/$defs/non_claims" }
+  },
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "rationale"],
+      "properties": {
+        "id": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "statement": { "type": "string", "minLength": 5, "maxLength": 1000 },
+        "rationale": { "type": "string", "minLength": 5, "maxLength": 2000 },
+        "criterion_id": { "$ref": "core.defs.schema.json#/$defs/identifier" }
+      }
+    }
+  }
+}

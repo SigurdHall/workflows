@@ -866,12 +866,22 @@ def _envelope_non_claims(results: Sequence[GateResult]) -> list[str]:
 
 
 def write_gate_results(
-    results: Sequence[GateResult], run_directory: Any, *, attempt: int = 1
+    results: Sequence[GateResult],
+    run_directory: Any,
+    *,
+    step_id: str,
+    attempt: int = 1,
 ) -> list[str]:
-    """Write one file per gate result into the run directory's gates/ folder."""
+    """Write one file per gate result into the run directory's gates/ folder.
+
+    Keyed by step and attempt, because the same gate runs several times in a
+    flow — before the work, after it, and again after each repair — and run
+    artifacts are append-only: a second result may not overwrite the record
+    of the first.
+    """
     written: list[str] = []
     for result in results:
-        relative = f"gates/{result.gate_id}.{attempt}.json"
+        relative = f"gates/{step_id}/{result.gate_id}.{attempt}.json"
         run_directory.write_artifact(relative, result.to_document())
         written.append(relative)
     return written

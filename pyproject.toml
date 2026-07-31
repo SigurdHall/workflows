@@ -16,4 +16,4 @@ where = ["src"]
 # The schemas are not documentation, they are what the validator validates
 # against. A wheel without them installs a gate that cannot check anything.
 [tool.setuptools.package-data]
-workflows = ["contracts/*.schema.json"]
+workflows = ["contracts/*.schema.json", "lenses/*/*.md"]

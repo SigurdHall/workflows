@@ -150,3 +150,48 @@ figures is an open question, stated as such in `runners/README.md`.
 roadmap, but the first live smoke test failed with `WinError 2` because an
 npm-installed CLI on Windows is a `.cmd` shim and `CreateProcess` does not
 apply PATHEXT to a bare name.
+
+## M4
+
+**D-M4-1 — The lens files live in `src/workflows/lenses/`, not `lenses/`.**
+Same reason as the schemas (D-M1-5): a prompt composed without its lens is
+a different prompt, so the data ships inside the package. The top-level
+`lenses/` directory keeps the catalog page.
+
+**D-M4-2 — Two schemas the roadmap does not name: `work-result` and
+`review-result`.** A model returns a *result*; the driver builds the
+envelope. Without a schema for what a model may return there is nothing for
+the runner's structured-output contract to validate against, and envelopes
+would be hand-authored by models — which ADR 0001 forbids.
+
+**D-M4-3 — A dry run may never report PASS.** The roadmap asks only that
+`--dry-run` call no model. Since the dry runner returns a schema-shaped
+stub, a flow would otherwise conclude PASS from stubs. Any dry-run verdict
+that would have passed is reported INCONCLUSIVE with a non-claim saying
+nothing was judged.
+
+**D-M4-4 — A review step that *fails* ends the flow BLOCKED rather than
+triggering a repair round.** A failed call produced no judgment, so there
+is nothing to repair and nothing to escalate. Repair rounds are for
+findings, not for transport failures.
+
+**D-M4-5 — Verdict ids are namespaced by the step that produced them, and
+superseded rounds are marked RESOLVED rather than dropped.** Two rounds of
+review legitimately both produce a finding called `F-1` pointing at their
+own `probe-1`; folding them together unnamespaced made one round's claim
+resolve to the other round's evidence. Findings from a round a later repair
+answered stay in the record as RESOLVED — what a repair fixed is part of
+what happened.
+
+**D-M4-6 — The flow CLI refuses to start when its run directory is visible
+to git inside the worktree.** Found by the first end-to-end dry run: the
+run wrote its own files into the worktree it was judging, and the
+base-identity gate correctly reported the worktree dirty. The gate was
+right; the configuration was wrong, and the flow now says so before any
+model is called.
+
+**D-M4-7 — Gate results are written per step, not per gate.** The same gate
+runs several times in a flow — before the work, after it, and again after
+each repair — and run artifacts are append-only, so a single
+`gates/<gate>.json` path made the second run of a gate fail outright. Found
+by the first flow test, not by reasoning.

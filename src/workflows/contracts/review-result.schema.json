@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review-result.schema.json",
+  "title": "Review result",
+  "description": "What a reviewing model returns. The driver wraps it into an envelope, which is then held to the same semantic rules as any other envelope: every claim points at evidence that exists, a negative-path claim needs an executed probe, and a PASS may not carry an open blocking finding. A reviewer that breaks one of those gets its result rejected and exactly one retry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "result",
+    "criterion_results",
+    "findings",
+    "evidence",
+    "non_claims"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.review-result.v1" },
+    "result": { "$ref": "core.defs.schema.json#/$defs/criterion_result" },
+    "summary": { "type": "string", "maxLength": 4000 },
+    "criterion_results": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "core.defs.schema.json#/$defs/criterion_outcome" }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "core.defs.schema.json#/$defs/finding" }
+    },
+    "evidence": {
+      "description": "Every probe actually executed. A claim with no logged probe is an assertion, not a finding.",
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "core.defs.schema.json#/$defs/evidence_ref" }
+    },
+    "non_claims": { "$ref": "core.defs.schema.json#/$defs/non_claims" }
+  }
+}
