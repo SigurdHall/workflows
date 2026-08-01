@@ -349,6 +349,10 @@ def induce(
     proposal, and a proposal the owner might ratify must never be a stub.
     """
     registry = registry if registry is not None else default_registry()
+    # Before the call, not after: the runner executes in this directory, and
+    # a working directory that does not exist yet fails the whole invocation.
+    # Found by the first live induce run, not by any dry test.
+    out_file.parent.mkdir(parents=True, exist_ok=True)
     call = RunnerCall(
         prompt=prompts.induction(
             rubric=rubric_text,
@@ -369,7 +373,6 @@ def induce(
             f"the induction call failed ({result.reason_code}): "
             f"{result.detail or 'no detail'}"
         )
-    out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text(json.dumps(result.output, indent=2) + "\n", encoding="utf-8")
     return result.output
 

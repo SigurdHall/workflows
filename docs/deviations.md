@@ -500,6 +500,14 @@ lens as two, each with half the findings — corrupting exactly the telemetry
 ADR 0002 says lens sets must be tuned on. Which lens produced a finding is
 bookkeeping the step already knows; it is now overwritten unconditionally.
 
+**D-M9-1 — induce created its output directory after invoking the runner.**
+Found by the first live induce call, not by any dry test: the runner executes
+in the call's working directory, which defaulted to the output file's parent
+— a directory the code only created after the call returned. The invocation
+failed with an invalid-directory error before any model was reached. The
+directory is now created before the call, and a test asserts the cwd exists
+at invocation time.
+
 **D-M8-4 — A benchmark cell is a program run, not a new orchestrator.** The
 roadmap says "reusing program infrastructure"; a cell writes a generated
 plan into the work root, resolves it against the materialized corpus

@@ -262,6 +262,28 @@ class DryRunTest(EvolveTestCase):
 
 
 class InductionTest(EvolveTestCase):
+    def test_the_working_directory_exists_before_the_call(self) -> None:
+        """Found by the first live induce: the runner executes in cwd, and a
+        cwd created only after the call fails the whole invocation."""
+
+        class CwdAsserting(ScriptedRunner):
+            def invoke(self, call):
+                assert Path(call.cwd).is_dir(), "cwd must exist when invoked"
+                return super().invoke(call)
+
+        out = self.root / "not-yet" / "0001.json"
+        evolve.induce(
+            CwdAsserting([amendment()]),
+            rubric_text=self.rubric(),
+            chosen="picked",
+            over="ranked above",
+            out_file=out,
+            registry=self.registry,
+            model="m",
+            effort="high",
+        )
+        self.assertTrue(out.is_file())
+
     def test_an_override_becomes_a_proposal_on_disk(self) -> None:
         runner = ScriptedRunner([amendment()])
         out = self.root / "amendments" / "0001.json"
