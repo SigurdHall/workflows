@@ -84,7 +84,8 @@ lenses/work/       producer perspectives (one versioned file per lens)
 lenses/review/     reviewer attack perspectives
 src/workflows/     the implementation: schemas, gates, runners, flows, program
 tests/             unittest suite and the annotated fixture corpus
-examples/          generic example artifacts (a plan, a contract)
+examples/          generic example artifacts (a plan, contracts, a corpus)
+skills/            how to use this repository, as an agent-readable skill
 gates/             what each gate checks and how it fails
 runners/           the runner interface and its invocation contract
 flows/             the five flows

@@ -3,8 +3,11 @@
 # Validate it with:
 #     python -m workflows.check plan.schema.json examples/plan.example.toml
 #
-# Resolve it (the single checkpoint; nothing runs):
-#     python -m workflows.program run examples/plan.example.toml
+# To resolve it (the single checkpoint; nothing runs), first replace the
+# placeholder base below with a real commit in the repository you are
+# pointing at — resolve verifies that the frozen base exists, and refuses a
+# plan whose base does not:
+#     python -m workflows.program run <your copy of this plan>
 #
 # Everything here is generic. Real contracts and plans live in the consuming
 # repository, never in this one.
@@ -14,6 +17,8 @@ plan_id = "plan-0001"
 plan_revision = 1
 description = "Two implement tasks and one fanout task with disjoint write scopes."
 
+# Replace this with a real commit before running: resolve checks that the
+# frozen base exists in the repository, and a plan is frozen at run start.
 [[base]]
 repo_id = "target"
 commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
