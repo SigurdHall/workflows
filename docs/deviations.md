@@ -332,6 +332,37 @@ outcomes and the model's per-subgoal judgments side by side, which is what
 "separating checked from judged" means in practice. Task flows gain gate
 outcomes in their verdicts, which is an improvement rather than a cost.
 
+## After v0.1.0 — what the first live run forced
+
+**D-L-1 — Deployment profiles (`--profile`) were added.** ADR 0005 says a
+profile resolves roles to models, but nothing implemented one: the CLIs used
+the built-in role *names*, so the first live call went out as
+`-m worker-class`. A live run without a profile is now refused with an
+explanation.
+
+**D-L-2 — The output schema is transformed before it leaves the process.**
+The provider will not follow a `$ref` out of the document, rejects references
+that are not to a top-level definition, rejects the constraint keywords
+(`uniqueItems`, `minItems`, `pattern`, …) outright, and requires every
+declared property to be in `required`. `provider_schema()` flattens, strips,
+and sends optional fields as required-and-nullable; the runner drops the nulls
+before validating. What is stripped is not unenforced — this repository's own
+validator still sees the full schema.
+
+**D-L-3 — A provider failure reports the provider's message.** The reason for
+a rejected schema arrives in a `turn.failed` event with nothing on stderr, so
+the runner read the exit code and reported "exit 1: ".
+
+**D-L-4 — `--dangerously-bypass-sandbox` exists and is off by default.** On at
+least one Windows host, `-s workspace-write` still left the workspace
+read-only and a producing role could not write. The flag is opt-in and loud;
+what bounds the risk is the flow's own worktree and the gates, not the
+provider's sandbox.
+
+**D-L-5 — `docs/evidence/` was added.** Measurements from real runs, and an
+explicit list of what remains unmeasured — which is most of the defaults this
+repository asserts.
+
 ## M8
 
 **D-M8-1 — Detection is matched by file path, not by defect identity.** The

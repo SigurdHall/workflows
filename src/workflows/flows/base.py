@@ -57,6 +57,41 @@ class Profile:
 
     bindings: dict[str, tuple[str, str]] = field(default_factory=lambda: dict(DEFAULT_BINDINGS))
     sandbox_for_role: dict[str, str] = field(default_factory=dict)
+    resolved: bool = False
+
+    @classmethod
+    def from_toml(cls, path: Path) -> Profile:
+        """Load a deployment profile: role -> concrete model and effort.
+
+        The defaults in this module are role *names*, not models. Passing
+        `worker-class` to a provider would fail at the first live call, so a
+        profile is what makes a live run possible at all.
+        """
+        import tomllib
+
+        document = tomllib.loads(path.read_text(encoding="utf-8-sig"))
+        block = document.get("bindings")
+        if not isinstance(block, dict) or not block:
+            raise FlowError(f"{path} declares no [bindings] table")
+        bindings = dict(DEFAULT_BINDINGS)
+        for role, entry in block.items():
+            if not isinstance(entry, dict) or "model" not in entry or "effort" not in entry:
+                raise FlowError(
+                    f"{path}: role {role!r} needs both a model and an effort"
+                )
+            bindings[role] = (str(entry["model"]), str(entry["effort"]))
+        unknown = sorted(set(block) - set(DEFAULT_BINDINGS))
+        if unknown:
+            raise FlowError(
+                f"{path} binds roles this version does not use: {', '.join(unknown)}. "
+                f"Known roles: {', '.join(sorted(DEFAULT_BINDINGS))}"
+            )
+        sandboxes = {
+            role: str(entry["sandbox"])
+            for role, entry in block.items()
+            if isinstance(entry, dict) and "sandbox" in entry
+        }
+        return cls(bindings=bindings, sandbox_for_role=sandboxes, resolved=True)
 
     def resolve(self, role: str) -> tuple[str, str]:
         try:

@@ -34,6 +34,13 @@ changing anything here.
 Install once with `pip install -e .`, or put `src` on the path per command
 (`PYTHONPATH=src` in bash, `$env:PYTHONPATH="src"` in PowerShell).
 
+**A live run needs a profile.** Flows name roles — `worker`, `review-1`,
+`review-2` — and a deployment profile binds each to a concrete model and
+effort. The built-in bindings are role *names*, not models, so a live run
+without `--profile` is refused rather than sent to a provider that would
+reject `-m worker-class`. Copy `examples/profile.example.toml` and put your
+own model ids in it.
+
 On Windows, check that `python` is a real interpreter before using it in a
 contract: where the Microsoft Store alias is active, `python` resolves to a
 stub that exits nonzero without running anything, and `py` is the interpreter.
@@ -43,8 +50,10 @@ helpful message.
 ```
 python -m workflows.check <schema> <file>                 # validate any document
 python -m workflows.flow implement --contract c.json --worktree <repo> --dry-run
+python -m workflows.flow implement --contract c.json --worktree <repo> \
+    --profile profile.toml --review-lens review/negative-path
 python -m workflows.program run plan.toml                 # resolve and print
-python -m workflows.program run plan.toml --approve       # the single checkpoint
+python -m workflows.program run plan.toml --approve --profile profile.toml
 python -m workflows.program resume <run-id>
 python -m workflows.benchmark run <corpus.json> --matrix m.toml --work-root <dir>
 ```
@@ -86,6 +95,15 @@ Each of these is a failure that happened, not a hypothetical:
   changed contract, base or plan — those are frozen at run start.
   `examples/plan.example.toml` carries a placeholder base: copy it and
   substitute a real commit rather than running it in place.
+- **The target repository needs `__pycache__/` ignored**, or any command you
+  run before the flow leaves the worktree dirty and `base_identity` refuses to
+  start. The gate is right; the repository is missing a line.
+- **The provider's sandbox may refuse writes a worker needs.** On at least one
+  Windows host `workspace-write` still reports a read-only workspace, and the
+  worker then produces an empty candidate — which the `candidate_changed` gate
+  catches rather than passing on. `--dangerously-bypass-sandbox` is the opt-in
+  escape; leave it off wherever the sandbox works. What bounds the risk when
+  it is on is the worktree and the gates, not the provider.
 
 ## Read a result honestly
 

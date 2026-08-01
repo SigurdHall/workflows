@@ -89,6 +89,50 @@ Event stream shape, as observed:
   "cache_write_input_tokens":...,"output_tokens":...,"reasoning_output_tokens":...}}
 ```
 
+## What the provider accepts as an output schema
+
+Not what this repository validates against. Two transformations happen in
+`provider_schema()` before a schema leaves the process, both forced by
+observed 400s rather than by documentation:
+
+1. **Every `$ref` is expanded.** The provider will not follow a reference out
+   of the document, and rejects any that is not to a top-level definition:
+   *"reference can only point to definitions defined at the top level of the
+   schema"*. Our schemas are layered on a shared `$defs` library, so what
+   validates here is not something a provider can be handed.
+2. **Constraint keywords are dropped and every property is made required.**
+   `uniqueItems`, `minItems`, `maxItems`, `minLength`, `maxLength`, `pattern`,
+   `minimum` and `maximum` are rejected outright — *"'uniqueItems' is not
+   permitted"* — and `required` must name every declared property:
+   *"'required' is required to be supplied and to be an array including every
+   key in properties"*. Optional fields are therefore sent as
+   required-and-nullable, and the runner drops the nulls again before
+   validating.
+
+What is stripped is **not** unenforced. The schema sent to the provider shapes
+the answer; the authoritative check is this repository's validator, which sees
+the full schema and buys exactly one retry. Treating the provider's copy as
+the gate would mean trusting the party being checked.
+
+## Sandbox and approvals
+
+`-s workspace-write` sets the sandbox policy, but on at least one Windows host
+a producing role still could not write, reporting first *"writing is blocked
+by read-only sandbox; rejected by user approval settings"* and then a plain
+read-only workspace. Dropping `--ephemeral`, keeping the user config, and
+`-c approval_policy=never` made no difference; `-a/--ask-for-approval` is a
+flag of the interactive command, not of `codex exec`.
+
+`CodexRunner(bypass_sandbox=True)` — `--dangerously-bypass-sandbox` on the
+flow CLI — passes `--dangerously-bypass-approvals-and-sandbox`. It is **off by
+default** and should stay off wherever the sandbox works.
+
+What bounds the risk when it is on is not the provider. It is that a producing
+role runs in a worktree the flow created from a frozen base, and that the
+scope, protected-hash and base-identity gates check every path it touched
+afterwards. The sandbox is defence in depth; the gates are the check. Never
+turn it on for a worktree that is not framed that way.
+
 ## Live smoke test
 
 2026-07-31, `codex-cli 0.145.0`, model `gpt-5.6-sol`, effort `low`. A
@@ -108,14 +152,28 @@ telemetry: {"runner": "codex", "model": "gpt-5.6-sol", "effort": "low",
 ```
 
 What this establishes: the argv contract works, structured output arrives
-and validates, telemetry parses with its fields separate. What it does
-**not** establish, and no test in this repository does yet: that the effort
-override changes model behaviour (the CLI accepted
-`-c model_reasoning_effort=low` and exited zero; the effect was not
-measured), that a multi-turn call reports usage per turn rather than
-cumulatively, or that a schema-violating response from a real model is
-recovered by the retry — that path is covered by tests against a fake
-runner only.
+and validates, telemetry parses with its fields separate.
+
+2026-08-01, same CLI, model `gpt-5.6-luna`, effort `max`: COMPLETED in 11.5 s
+with 20 reasoning-output tokens where the `low` call above returned 0. **The
+effort override does take effect** — that open question is closed.
+
+A whole `implement` flow has since run against a live model end to end and
+reached a PASS verdict; the record, its cost and the five failures it took to
+get there are in
+[docs/evidence/live-run-2026-08-01-percent-change.md](../docs/evidence/live-run-2026-08-01-percent-change.md).
+
+Still **not** established: that a multi-turn call reports usage per turn
+rather than cumulatively, or that a schema-violating response from a real
+model is recovered by the bounded retry — that path is covered by tests
+against a fake runner only.
+
+## Deployment profiles
+
+Flows name roles; a profile resolves them to models (ADR 0005). The built-in
+bindings are role *names* — `worker-class`, `strongest-same-family` — not
+models, so a live run without `--profile` is refused here rather than by a
+provider rejecting `-m worker-class`. See `examples/profile.example.toml`.
 
 ## Dry runs
 

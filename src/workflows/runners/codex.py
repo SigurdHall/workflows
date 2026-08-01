@@ -44,6 +44,21 @@ class CodexRunner:
     ignore_user_config: bool = True
     extra_args: tuple[str, ...] = ()
     env: dict[str, str] | None = None
+    registry: Any = None
+    bypass_sandbox: bool = False
+    """Run the model without the provider's sandbox.
+
+    Off by default. Turn it on only where the provider's sandbox refuses
+    writes a producing role legitimately needs — on some hosts
+    `workspace-write` still reports a read-only workspace, and a worker that
+    cannot write produces an empty candidate.
+
+    What bounds the risk when it is on is not the provider: it is that the
+    worker runs in a worktree this flow created from a frozen base, and that
+    the scope, protected-hash and base-identity gates check every path it
+    touched afterwards. The sandbox is defence in depth; the gates are the
+    check. Never turn this on for a worktree you have not framed that way.
+    """
 
     def resolve_executable(self) -> str:
         """Find the launcher on PATH before spawning it.
@@ -79,6 +94,8 @@ class CodexRunner:
         ]
         if self.ignore_user_config:
             argv.append("--ignore-user-config")
+        if self.bypass_sandbox:
+            argv.append("--dangerously-bypass-approvals-and-sandbox")
         argv.extend(self.extra_args)
         argv.append("-")  # read the prompt from stdin
         return argv
@@ -87,8 +104,18 @@ class CodexRunner:
         started = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="workflows-codex-") as scratch:
             schema_path = Path(scratch) / "output-schema.json"
+            # Flattened before it leaves the process: the provider will not
+            # follow a reference out of the document, and rejects references
+            # that are not to a top-level definition. Our schemas are layered
+            # on a shared $defs library, so what validates here is not what a
+            # provider can be handed.
             schema_path.write_text(
-                json.dumps(call.output_schema, indent=2, sort_keys=True), encoding="utf-8"
+                json.dumps(
+                    provider_schema(call.output_schema, self.registry),
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
             )
             try:
                 completed = subprocess.run(
@@ -128,11 +155,15 @@ class CodexRunner:
         )
 
         if completed.returncode != 0:
+            # The provider's own message arrives as an event, not on stderr.
+            # Reporting "exit 1" alone throws away the only sentence that says
+            # what went wrong.
+            reported = reported_error(events) or completed.stderr.strip()
             return RunnerResult(
                 status="FAILED",
                 reason_code="nonzero_exit",
                 telemetry=telemetry,
-                detail=f"exit {completed.returncode}: {completed.stderr.strip()[:2000]}",
+                detail=f"exit {completed.returncode}: {reported[:2000]}",
                 raw=completed.stdout,
             )
 
@@ -167,7 +198,7 @@ class CodexRunner:
             status="COMPLETED",
             reason_code="clean",
             telemetry=telemetry,
-            output=output,
+            output=drop_nulls(output),
             raw=message,
         )
 
@@ -222,6 +253,88 @@ class DryRunner:
         )
 
 
+UNSUPPORTED_BY_PROVIDER = frozenset(
+    {
+        "uniqueItems",
+        "minItems",
+        "maxItems",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "minimum",
+        "maximum",
+        "examples",
+        "default",
+        "deprecated",
+        "title",
+    }
+)
+
+
+def provider_schema(schema: dict[str, Any], registry: Any = None) -> dict[str, Any]:
+    """The output schema as a provider will accept it.
+
+    Two transformations, both forced by what the provider rejects: every
+    ``$ref`` is expanded, because it will not follow one out of the document
+    and refuses any that is not a top-level definition; and the constraint
+    keywords outside its subset are dropped, because it rejects the whole
+    request rather than ignoring them.
+
+    What is dropped is *not* unenforced. The schema sent to the provider
+    shapes the answer; the authoritative check is this repository's own
+    validator, which sees the full schema and buys exactly one retry when the
+    answer misses it. Treating the provider's copy as the gate would be
+    trusting the party being checked.
+    """
+    registry = registry if registry is not None else schema_module.default_registry()
+    flat = schema_module.inline(schema, registry=registry)
+    return _strip_unsupported(flat)
+
+
+def _strip_unsupported(schema: Any) -> Any:
+    """Drop rejected keywords, and make every property required.
+
+    The provider requires `required` to name every declared property — it has
+    no notion of an optional field. An optional field therefore becomes a
+    required nullable one, and the runner drops the nulls again before the
+    answer reaches this repository's own validator.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    result: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in UNSUPPORTED_BY_PROVIDER:
+            continue
+        if key == "properties" and isinstance(value, dict):
+            result[key] = {name: _strip_unsupported(child) for name, child in value.items()}
+        elif key in ("items", "additionalProperties") and isinstance(value, dict):
+            result[key] = _strip_unsupported(value)
+        else:
+            result[key] = value
+
+    properties = result.get("properties")
+    if isinstance(properties, dict) and properties:
+        required = list(result.get("required", []))
+        optional = [name for name in properties if name not in required]
+        for name in optional:
+            properties[name] = _nullable(properties[name])
+        result["required"] = required + optional
+    return result
+
+
+def _nullable(schema: Any) -> Any:
+    """Let a field carry null, so the provider can require it and mean nothing."""
+    if not isinstance(schema, dict):
+        return schema
+    declared = schema.get("type")
+    if declared is None:
+        return schema
+    names = [declared] if isinstance(declared, str) else list(declared)
+    if "null" not in names:
+        names = names + ["null"]
+    return {**schema, "type": names}
+
+
 def _honest_stub(schema: dict[str, Any], registry: Any) -> Any:
     """A stub that claims nothing.
 
@@ -274,6 +387,41 @@ def final_message(events: Sequence[dict[str, Any]]) -> str | None:
         item = event.get("item") or {}
         if item.get("type") == "agent_message" and isinstance(item.get("text"), str):
             message = item["text"]
+    return message
+
+
+def drop_nulls(value: Any) -> Any:
+    """Remove null-valued keys, the provider's way of saying "absent".
+
+    Optional fields are sent as required-and-nullable, so the answer comes
+    back with explicit nulls where the model had nothing to say. None of this
+    repository's model-facing schemas accepts a null, so removing them is
+    lossless and turns "present and empty" back into "absent".
+    """
+    if isinstance(value, dict):
+        return {
+            key: drop_nulls(item) for key, item in value.items() if item is not None
+        }
+    if isinstance(value, list):
+        return [drop_nulls(item) for item in value if item is not None]
+    return value
+
+
+def reported_error(events: Sequence[dict[str, Any]]) -> str | None:
+    """The provider's own account of a failure, from the event stream.
+
+    A failed turn and a fatal error item both carry a message; stderr often
+    carries nothing at all. The last one wins, because a turn that failed
+    after a warning failed for the later reason.
+    """
+    message: str | None = None
+    for event in events:
+        if event.get("type") == "turn.failed":
+            error = event.get("error") or {}
+            if isinstance(error, dict) and error.get("message"):
+                message = str(error["message"])
+        elif event.get("type") == "error" and event.get("message"):
+            message = str(event["message"])
     return message
 
 

@@ -120,6 +120,15 @@ def build_context(args: argparse.Namespace) -> FlowContext:
             + "\n".join(f"  {error}" for error in errors[:20])
         )
 
+    profile = Profile.from_toml(args.profile) if args.profile else Profile()
+    if not args.dry_run and not profile.resolved:
+        raise FlowError(
+            "a live run needs a deployment profile: the built-in bindings are "
+            "role names such as 'worker-class', not models, and a provider "
+            "would reject them at the first call. Pass --profile <file.toml> "
+            "(see examples/profile.example.toml), or add --dry-run."
+        )
+
     worktree = args.worktree.resolve()
     _check_run_directory_is_invisible(args.runs.resolve(), worktree)
     frozen = args.base or gitcmd.head_commit(worktree)
@@ -154,8 +163,10 @@ def build_context(args: argparse.Namespace) -> FlowContext:
         base=frozen,
         run=run_directory,
         run_id=run_id,
-        runner=DryRunner() if args.dry_run else CodexRunner(),
-        profile=Profile(),
+        runner=DryRunner(registry=registry)
+        if args.dry_run
+        else CodexRunner(registry=registry, bypass_sandbox=args.dangerously_bypass_sandbox),
+        profile=profile,
         escalation=Escalation(max_repair_rounds=args.max_repair_rounds),
         registry=registry,
         dry_run=bool(args.dry_run),
@@ -181,6 +192,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--work-lens", action="append", default=[])
     parser.add_argument("--review-lens", action="append", default=[])
     parser.add_argument("--focus-hint", default=None)
+    parser.add_argument(
+        "--dangerously-bypass-sandbox",
+        action="store_true",
+        help=(
+            "run producing roles without the provider's sandbox. Only where "
+            "the sandbox refuses writes a worker legitimately needs; the scope "
+            "and protected-hash gates remain the actual check"
+        ),
+    )
+    parser.add_argument(
+        "--profile",
+        type=Path,
+        default=None,
+        help="deployment profile binding roles to concrete models; required for a live run",
+    )
     parser.add_argument("--max-repair-rounds", type=int, default=2)
     parser.add_argument(
         "--max-parallel-workers",
@@ -202,7 +228,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cannot start the flow: {exc}", file=sys.stderr)
         return EXIT_USAGE
 
-    verdict = RUNNABLE[args.flow](context)
+    try:
+        verdict = RUNNABLE[args.flow](context)
+    except (FlowError, SchemaError) as exc:
+        # A configuration fault mid-flow is still a configuration fault, not
+        # something a user should read a traceback to understand.
+        print(f"the flow could not run: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     errors = check_document(verdict, base.VERDICT_SCHEMA, registry=context.schemas())
     if errors:
         print("the verdict this flow produced does not validate:", file=sys.stderr)

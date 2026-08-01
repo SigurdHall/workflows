@@ -534,6 +534,54 @@ def iter_errors(
                 )
 
 
+def inline(
+    schema: dict[str, Any],
+    *,
+    registry: SchemaRegistry | None = None,
+    document: dict[str, Any] | None = None,
+    depth: int = 0,
+) -> dict[str, Any]:
+    """Expand every ``$ref`` into one self-contained schema.
+
+    Providers that accept a response schema generally will not follow a
+    reference out of the document, and several reject references that are not
+    to a top-level definition. Our schemas are layered on a shared ``$defs``
+    library, so what validates here is not what a provider can be handed: the
+    schema has to be flattened before it leaves this process.
+
+    Sibling keywords beside a ``$ref`` win over the target's, which is the
+    2020-12 rule and the reason ``{"$ref": ..., "minItems": 1}`` works.
+    """
+    if depth > MAX_DEPTH:
+        raise SchemaError("maximum schema depth exceeded while inlining")
+    if document is None:
+        document = schema
+
+    if "$ref" in schema:
+        target, owner = _resolve_ref(schema["$ref"], document, registry)
+        siblings = {key: value for key, value in schema.items() if key != "$ref"}
+        return inline(
+            {**target, **siblings}, registry=registry, document=owner, depth=depth + 1
+        )
+
+    result: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in ("$defs", "$id", "$schema"):
+            continue  # the definitions are being expanded away
+        if key == "properties" and isinstance(value, dict):
+            result[key] = {
+                name: inline(child, registry=registry, document=document, depth=depth + 1)
+                for name, child in value.items()
+            }
+        elif key in ("items", "additionalProperties") and isinstance(value, dict):
+            result[key] = inline(
+                value, registry=registry, document=document, depth=depth + 1
+            )
+        else:
+            result[key] = value
+    return result
+
+
 def validate(
     instance: Any,
     schema: dict[str, Any],

@@ -388,8 +388,89 @@ class CodexInvocationTest(unittest.TestCase):
 
         with mock.patch.object(codex.subprocess, "run", side_effect=capture):
             runner.invoke(a_call(prompt="the composed prompt"))
-        self.assertEqual(seen["schema"], OUTPUT_SCHEMA)
+        # Not the schema verbatim: the provider gets a flattened copy with
+        # every property required and the optional ones nullable.
+        self.assertEqual(
+            seen["schema"], codex.provider_schema(OUTPUT_SCHEMA, support.registry())
+        )
         self.assertEqual(seen["stdin"], "the composed prompt")
+
+
+class ProviderSchemaTest(unittest.TestCase):
+    """What leaves the process is not what this repository validates against.
+
+    Every transformation here was forced by an observed provider rejection,
+    recorded in runners/README.md.
+    """
+
+    def setUp(self) -> None:
+        self.registry = support.registry()
+
+    def test_external_references_are_expanded_away(self) -> None:
+        for name in (
+            "work-result.schema.json",
+            "review-result.schema.json",
+            "adjudication-result.schema.json",
+            "attainment-result.schema.json",
+        ):
+            with self.subTest(schema=name):
+                flat = codex.provider_schema(self.registry.get(name), self.registry)
+                text = json.dumps(flat)
+                self.assertNotIn('"$ref"', text)
+                self.assertNotIn("$defs", flat)
+
+    def test_rejected_keywords_are_dropped(self) -> None:
+        flat = codex.provider_schema(
+            self.registry.get("work-result.schema.json"), self.registry
+        )
+        text = json.dumps(flat)
+        for keyword in ("uniqueItems", "minItems", "maxItems", "pattern", "minLength"):
+            self.assertNotIn(keyword, text, keyword)
+
+    def test_every_property_becomes_required_and_optionals_become_nullable(self) -> None:
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["a"],
+            "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+        }
+        flat = codex.provider_schema(schema, self.registry)
+        self.assertEqual(sorted(flat["required"]), ["a", "b"])
+        self.assertEqual(flat["properties"]["a"]["type"], "string")
+        self.assertEqual(flat["properties"]["b"]["type"], ["integer", "null"])
+
+    def test_the_nulls_come_back_out_before_validation(self) -> None:
+        self.assertEqual(
+            codex.drop_nulls({"a": 1, "b": None, "c": {"d": None, "e": 2}, "f": [1, None]}),
+            {"a": 1, "c": {"e": 2}, "f": [1]},
+        )
+
+    def test_a_provider_failure_reports_the_providers_own_message(self) -> None:
+        events = [
+            {"type": "item.completed", "item": {"type": "error", "message": "a warning"}},
+            {"type": "turn.failed", "error": {"message": "invalid_json_schema: ..."}},
+        ]
+        self.assertEqual(codex.reported_error(events), "invalid_json_schema: ...")
+
+    def test_a_rejected_schema_surfaces_the_reason_not_just_the_exit_code(self) -> None:
+        runner = codex.CodexRunner(registry=self.registry)
+        completed = subprocess.CompletedProcess(
+            args=["codex"],
+            returncode=1,
+            stdout='{"type":"turn.failed","error":{"message":"uniqueItems is not permitted"}}\n',
+            stderr="",
+        )
+        with mock.patch.object(codex.subprocess, "run", return_value=completed):
+            result = runner.invoke(a_call())
+        self.assertEqual(result.reason_code, "nonzero_exit")
+        self.assertIn("uniqueItems is not permitted", result.detail)
+
+    def test_the_sandbox_bypass_is_off_unless_asked_for(self) -> None:
+        flag = "--dangerously-bypass-approvals-and-sandbox"
+        plain = codex.CodexRunner().argv(a_call(), Path("s.json"))
+        self.assertNotIn(flag, plain)
+        bypassed = codex.CodexRunner(bypass_sandbox=True).argv(a_call(), Path("s.json"))
+        self.assertIn(flag, bypassed)
 
 
 if __name__ == "__main__":

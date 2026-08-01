@@ -107,14 +107,28 @@ verbatim into prompts.
 ## Running one
 
 ```
-python -m workflows.program run plan.toml            # resolve, print, stop
-python -m workflows.program run plan.toml --approve  # the single checkpoint
 python -m workflows.flow implement --contract c.json --worktree . --dry-run
+python -m workflows.flow implement --contract c.json --worktree . \
+    --profile profile.toml
+python -m workflows.program run plan.toml            # resolve, print, stop
+python -m workflows.program run plan.toml --approve --profile profile.toml
 ```
 
 `--dry-run` materializes worktrees, composed prompts, gate results and the
 run manifest, and calls no model. A dry run never reports PASS: nothing was
 judged, so the verdict is INCONCLUSIVE and says why.
+
+A live run needs a **deployment profile**: flows name roles (`worker`,
+`review-1`, `review-2`) and a profile binds each to a concrete model and
+effort. The built-in bindings are role names, not models, so a live run
+without `--profile` is refused here rather than by a provider. See
+[examples/profile.example.toml](examples/profile.example.toml), and
+[runners/README.md](runners/README.md) for what the Codex runner does with
+them — including the schema flattening and the sandbox caveat that a live run
+runs into.
+
+Measurements from real runs live in [docs/evidence/](docs/evidence/), which
+also lists what is still unmeasured. That list is longer than this one.
 
 ## Using the validator
 

@@ -1,0 +1,56 @@
+# A deployment profile: which concrete model serves which ladder role.
+#
+#     python -m workflows.flow implement --contract c.json --profile profile.toml
+#     python -m workflows.program run plan.toml --approve --profile profile.toml
+#
+# Flows name roles; a profile resolves them (ADR 0005). The built-in defaults
+# are role *names* — "worker-class", "strongest-same-family" — not models, so a
+# live run without a profile is refused rather than sent to a provider that
+# would reject them.
+#
+# The model ids below are examples. Substitute the ones your runner actually
+# serves; nothing in this repository knows or checks them.
+
+[bindings]
+
+# Level 1 of the ladder: blind, fresh context, defect recall. The motivating
+# experiments found a fast worker-class model best here — it beat a larger
+# same-family model that scored more generously and found nothing unique.
+[bindings.review-1]
+model = "gpt-5.6-luna"
+effort = "max"
+
+# Level 2: severity calibration and a second opinion. A larger model in the
+# same family, on signal only.
+[bindings.review-2]
+model = "gpt-5.6-terra"
+effort = "max"
+
+# Level 3: adjudication between conflicting levels.
+[bindings.review-3]
+model = "gpt-5.6-sol"
+effort = "high"
+
+# Level 4 needs a *cross-family* model. It is declared and never runs while
+# this deployment has one runner family; binding it here changes nothing until
+# a second runner exists.
+[bindings.review-4]
+model = "cross-family-placeholder"
+effort = "high"
+
+# Producing roles. These run with a writable sandbox by default.
+[bindings.worker]
+model = "gpt-5.6-luna"
+effort = "max"
+
+[bindings.repair]
+model = "gpt-5.6-luna"
+effort = "max"
+
+[bindings.synthesis]
+model = "gpt-5.6-sol"
+effort = "high"
+
+[bindings.adjudication]
+model = "gpt-5.6-sol"
+effort = "high"

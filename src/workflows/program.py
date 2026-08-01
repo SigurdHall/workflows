@@ -342,7 +342,9 @@ class Program:
         self.dry_run = dry_run
         self.registry = registry or default_registry()
         self.runner_factory = runner_factory or (
-            (lambda: DryRunner(registry=self.registry)) if dry_run else (lambda: CodexRunner())
+            (lambda: DryRunner(registry=self.registry))
+            if dry_run
+            else (lambda: CodexRunner(registry=self.registry))
         )
         self.max_parallel_workers = max_parallel_workers
         self.run = RunDirectory(runs_root / program_run_id)
@@ -748,12 +750,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--max-parallel-workers", type=int, default=1)
+    run_parser.add_argument(
+        "--profile",
+        type=Path,
+        default=None,
+        help="deployment profile binding roles to concrete models; required for a live run",
+    )
 
     resume_parser = sub.add_parser("resume", help="continue a program run")
     resume_parser.add_argument("run_id")
     resume_parser.add_argument("--worktree", type=Path, default=Path("."))
     resume_parser.add_argument("--runs", type=Path, default=Path("runs"))
     resume_parser.add_argument("--max-parallel-workers", type=int, default=1)
+    resume_parser.add_argument("--profile", type=Path, default=None)
 
     args = parser.parse_args(argv)
     try:
@@ -776,7 +785,20 @@ def _exit_code(report: dict[str, Any]) -> int:
     return EXIT_STOPPED
 
 
+def _profile_for(args: argparse.Namespace, dry_run: bool) -> Profile:
+    profile = Profile.from_toml(args.profile) if args.profile else Profile()
+    if not dry_run and not profile.resolved:
+        raise ProgramError(
+            "a live run needs a deployment profile: the built-in bindings are "
+            "role names such as 'worker-class', not models, and a provider "
+            "would reject them at the first call. Pass --profile <file.toml> "
+            "(see examples/profile.example.toml), or add --dry-run."
+        )
+    return profile
+
+
 def _run(args: argparse.Namespace) -> int:
+    profile = _profile_for(args, bool(args.dry_run))
     resolved = resolve(args.plan, worktree=args.worktree.resolve())
     print(describe(resolved))
     if not args.approve:
@@ -794,6 +816,7 @@ def _run(args: argparse.Namespace) -> int:
         program_run_id=_program_run_id(resolved, args.run_id),
         dry_run=bool(args.dry_run),
         max_parallel_workers=args.max_parallel_workers,
+        profile=profile,
     )
     report = program.execute()
     print("\n" + summarize(report))
@@ -829,6 +852,7 @@ def _resume(args: argparse.Namespace) -> int:
         program_run_id=args.run_id,
         dry_run=bool(manifest.get("dry_run")),
         max_parallel_workers=args.max_parallel_workers,
+        profile=_profile_for(args, bool(manifest.get("dry_run"))),
     )
     report = program.execute()
     print(summarize(report))

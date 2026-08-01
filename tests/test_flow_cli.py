@@ -153,6 +153,33 @@ class FlowCliTest(unittest.TestCase):
         self.assertEqual(code, flow.EXIT_USAGE)
         self.assertIn("flow", err)
 
+    def test_a_live_run_without_a_profile_is_refused(self) -> None:
+        """Otherwise the first call goes out as `-m worker-class`."""
+        code, _, err = run(*self.args("--run-id", "run-live"))
+        self.assertEqual(code, flow.EXIT_USAGE)
+        self.assertIn("deployment profile", err)
+        self.assertFalse((self.repo.path / "runs" / "run-live").exists())
+
+    def test_a_dry_run_needs_no_profile(self) -> None:
+        code, _, err = run(*self.args("--dry-run", "--run-id", "run-noprofile"))
+        self.assertEqual(code, flow.EXIT_OK, err)
+
+    def test_a_profile_is_accepted_and_bound(self) -> None:
+        # Outside the worktree: an untracked file inside it would make the
+        # base-identity gate report a dirty base, which it should.
+        profile = Path(self._outside.name) / "profile.toml"
+        profile.write_text(
+            '[bindings.worker]\nmodel = "m"\neffort = "max"\n', encoding="utf-8"
+        )
+        code, _, err = run(
+            *self.args("--dry-run", "--run-id", "run-profiled", "--profile", str(profile))
+        )
+        self.assertEqual(code, flow.EXIT_OK, err)
+        telemetry = (
+            self.repo.path / "runs" / "run-profiled" / "telemetry.jsonl"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"model": "m"', telemetry)
+
     def test_an_invalid_contract_is_refused_before_anything_runs(self) -> None:
         broken = dict(CONTRACT)
         broken.pop("verification")
