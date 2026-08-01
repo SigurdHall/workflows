@@ -9,6 +9,7 @@
       "domain": "bi-analytics",
       "tier": "A",
       "contract_path": "contracts/measure-variance.json",
+      "clean_path": "clean/measure-variance",
       "seed_path": "seeds/measure-variance",
       "defects": [
         {
@@ -47,6 +48,7 @@
       "domain": "bi-analytics",
       "tier": "A",
       "contract_path": "contracts/star-schema-split.json",
+      "clean_path": "clean/star-schema-split",
       "seed_path": "seeds/star-schema-split",
       "defects": [
         {
@@ -83,6 +85,7 @@
       "domain": "bi-analytics",
       "tier": "A",
       "contract_path": "contracts/snapshot-idempotence.json",
+      "clean_path": "clean/snapshot-idempotence",
       "seed_path": "seeds/snapshot-idempotence",
       "defects": [
         {
@@ -119,6 +122,7 @@
       "domain": "agent-engineering",
       "tier": "A",
       "contract_path": "contracts/triage-router.json",
+      "clean_path": "clean/triage-router",
       "seed_path": "seeds/triage-router",
       "defects": [
         {
@@ -155,6 +159,7 @@
       "domain": "agent-engineering",
       "tier": "A",
       "contract_path": "contracts/field-extraction.json",
+      "clean_path": "clean/field-extraction",
       "seed_path": "seeds/field-extraction",
       "defects": [
         {
@@ -192,6 +197,7 @@
       "domain": "agent-engineering",
       "tier": "A",
       "contract_path": "contracts/instruction-set.json",
+      "clean_path": "clean/instruction-set",
       "seed_path": "seeds/instruction-set",
       "defects": [
         {

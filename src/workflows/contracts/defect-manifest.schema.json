@@ -37,6 +37,10 @@
           "enum": ["A", "B", "C"]
         },
         "contract_path": { "$ref": "core.defs.schema.json#/$defs/relative_path" },
+        "clean_path": {
+          "description": "A defect-free overlay on the seed, relative to the corpus root. A review cell commits this as its base and puts the seed on top as the candidate, so the diff a reviewer judges is the one that introduces the planted defects. Without it a review cell has nothing to diff against and the corpus can only measure producing flows.",
+          "$ref": "core.defs.schema.json#/$defs/relative_path"
+        },
         "seed_path": {
           "description": "The tree materialized into the benchmark repository. Everything outside it stays hidden.",
           "$ref": "core.defs.schema.json#/$defs/relative_path"

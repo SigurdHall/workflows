@@ -7,8 +7,36 @@ description: Delegate bounded coding work through this repository's orchestratio
 
 Models do judgment; code does protocol. Reach for a flow when the *protocol*
 matters — enforced scope, byte-identical protected files, blind review,
-resumable runs, one approval for a batch. Skip it for a one-file edit: the
-contract would cost more than the change.
+resumable runs, one approval for a batch.
+
+## Decide whether to use a flow at all
+
+This is the decision that matters most, and it is usually "no". Measured on
+2026-08-01, one task through one flow costs **700k–1.7M new input tokens and
+7–20 minutes**, whatever the size of the change. The first live run spent
+345k tokens on a two-line guard.
+
+Do not use a flow when:
+
+- the change is small and a test would catch a mistake — the contract costs
+  more than the change, every time;
+- you can review the result yourself in less time than the flow takes;
+- there is no verification command worth running, and no goal rubric either —
+  the gates are then the only real check, and you can run those yourself.
+
+Use one when at least one of these is true:
+
+- **the protected files matter more than the change** — a byte-identical hash
+  gate is worth more than any amount of care;
+- **the scope must be provable**, not merely intended;
+- **several bounded tasks should run under one approval**, with one report;
+- **the work must be auditable afterwards** — every prompt, gate result and
+  verdict on disk, resumable;
+- **an existing candidate needs a blind judgement** from something that never
+  saw how it was made.
+
+Cost scales with reviewers, not with the diff. Two review lenses are two full
+calls; escalating to level 2 is a third.
 
 Paths below are relative to this repository's root. `docs/deviations.md`
 records every departure from `docs/roadmap.md` and why; read it before
@@ -60,6 +88,49 @@ python -m workflows.benchmark run <corpus.json> --matrix m.toml --work-root <dir
 
 Exit codes are check-style everywhere: 0 clean, 1 violations or a failed
 verdict, 2 usage or configuration error.
+
+## Measuring, not asserting
+
+A benchmark cell is one flow over one corpus, run through the program level
+and scored against a hidden answer key. The matrix file declares cells:
+
+```toml
+[[cell]]
+flow = "assure"          # implement | fanout | assure. Omit and width decides.
+model = "gpt-5.6-luna"   # a real model id: a live matrix refuses role names
+effort = "max"
+worker_count = 1         # fanout needs >1; assure produces nothing, leave at 1
+```
+
+```
+python -m workflows.benchmark run <corpus.json> --matrix m.toml \
+    --work-root <outside the repo> --profile profile.toml \
+    --task <id> --task <id> --budget-tokens 1500000
+python -m workflows.benchmark score <corpus.json> <program-run-root> --task <id>
+```
+
+**Read `caught`, `missed`, `removed` and `indeterminate` — not one recall
+number.** A cell runs a producing step, so a worker that fixes a planted
+defect leaves nothing for a reviewer to catch. Recall is `caught / present`;
+`removed` and `indeterminate` are reported beside it and belong to neither
+side. A cell with nothing present reports no recall rather than zero.
+
+Which cell answers which question:
+
+| Cell | What it measures |
+|---|---|
+| `assure` | Reviewer recall and lens yield, with no worker in the way. The cleanest measurement here |
+| `implement` | The whole configuration end to end: what a worker leaves and what review catches |
+| `fanout` | The same, against the cost of extra worker breadth |
+
+`adjudicate` cannot be a cell. It is reached from a conflict *inside* a flow,
+and a matrix that scheduled it would be inventing a conflict rather than
+measuring one; `load_matrix` refuses it and says so.
+
+Budgets are **per cell, not per matrix**, and are checked between tasks rather
+than mid-call. Start with two cells and two tasks: one live `assure` cell over
+one task cost ~550k new input tokens and ~15 minutes when the ladder escalated
+to level 2.
 
 ## The order that works
 
@@ -118,6 +189,15 @@ Each of these is a failure that happened, not a hypothetical:
 
 ## Read a result honestly
 
+- **A PASS means the diff was reviewed, not that the contract holds.** Measured
+  on 2026-08-01: six reviewers across two producing flows marked an acceptance
+  criterion PASS while the defect that criterion names was live in the
+  candidate. The review prompt carries the contract and the worker's *diff* —
+  not the code the criteria are about — so a criterion about untouched code is
+  answered from nothing. Until that is fixed, treat a producing flow's PASS as
+  "nothing wrong in the change", and use `assure` against a known-good base
+  when you need the stronger claim. See
+  `docs/evidence/benchmark-2026-08-01-tier-a.md`.
 - **A dry run never reports PASS.** No model was called, so nothing was
   judged; the verdict is INCONCLUSIVE and says why. Reading INCONCLUSIVE as
   failure misreads every dry run.

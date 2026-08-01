@@ -285,7 +285,7 @@ class ReportTest(CorpusTestCase):
         errors = check_document(document, benchmark.REPORT_SCHEMA, registry=self.registry)
         self.assertEqual([str(e) for e in errors], [])
         self.assertEqual([cell["cell_id"] for cell in document["cells"]],
-                         ["worker-class-medium-w1", "worker-class-high-w5"])
+                         ["implement-worker-class-medium-w1", "fanout-worker-class-high-w5"])
         joined = " ".join(document["non_claims"])
         self.assertIn("not false positives", joined)
         self.assertIn("matched by location", joined)
@@ -373,7 +373,7 @@ class MatrixTest(CorpusTestCase):
         )
         cells = benchmark.load_matrix(path)
         self.assertEqual([cell.cell_id for cell in cells],
-                         ["worker-class-medium-w1", "worker-class-high-w5"])
+                         ["implement-worker-class-medium-w1", "fanout-worker-class-high-w5"])
 
     def test_a_matrix_with_no_cells_is_refused(self) -> None:
         path = self.root / "empty.toml"
@@ -436,7 +436,7 @@ class MatrixRunTest(CorpusTestCase):
         self.assertEqual([str(e) for e in errors], [])
         self.assertEqual(
             [cell["cell_id"] for cell in document["cells"]],
-            ["worker-class-medium-w1", "worker-class-high-w2"],
+            ["implement-worker-class-medium-w1", "fanout-worker-class-high-w2"],
         )
         for cell in document["cells"]:
             self.assertEqual(cell["score"]["planted"], 3)
@@ -469,7 +469,7 @@ class MatrixRunTest(CorpusTestCase):
             dry_run=True,
             registry=self.registry,
         )
-        plan = json.loads((work / "plans" / "m-high-w3" / "plan.json").read_text(encoding="utf-8"))
+        plan = json.loads((work / "plans" / "fanout-m-high-w3" / "plan.json").read_text(encoding="utf-8"))
         self.assertEqual({task["flow"] for task in plan["tasks"]}, {"fanout"})
         self.assertEqual({len(task["lens_set"]) for task in plan["tasks"]}, {3})
 
@@ -517,6 +517,102 @@ class SubsetTest(CorpusTestCase):
         self.assertEqual(len(claim), 1)
         self.assertIn("triage-router", claim[0])
         self.assertNotIn("measure-variance", claim[0])
+
+
+class CellFlowTest(CorpusTestCase):
+    """A cell says which flow it runs; width picks one when it does not."""
+
+    def matrix(self, body: str) -> Path:
+        path = self.root / "matrix.toml"
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_width_still_picks_the_flow_when_a_cell_is_silent(self) -> None:
+        self.assertEqual(benchmark.Cell("m", "high", 1).resolved_flow, "implement")
+        self.assertEqual(benchmark.Cell("m", "high", 3).resolved_flow, "fanout")
+
+    def test_a_cell_can_name_its_flow(self) -> None:
+        cells = benchmark.load_matrix(
+            self.matrix(
+                '[[cell]]\nflow = "assure"\nmodel = "m"\neffort = "high"\n'
+            )
+        )
+        self.assertEqual(cells[0].resolved_flow, "assure")
+        self.assertTrue(cells[0].reviews_only)
+        self.assertTrue(cells[0].cell_id.startswith("assure-"))
+
+    def test_a_flow_a_matrix_cannot_schedule_is_refused(self) -> None:
+        with self.assertRaises(benchmark.BenchmarkError) as raised:
+            benchmark.load_matrix(
+                self.matrix('[[cell]]\nflow = "adjudicate"\nmodel = "m"\neffort = "high"\n')
+            )
+        self.assertIn("adjudicate", str(raised.exception))
+        self.assertIn("conflict inside a flow", str(raised.exception))
+
+    def test_a_fanout_cell_of_one_worker_is_refused(self) -> None:
+        with self.assertRaises(benchmark.BenchmarkError):
+            benchmark.load_matrix(
+                self.matrix(
+                    '[[cell]]\nflow = "fanout"\nmodel = "m"\neffort = "high"\nworker_count = 1\n'
+                )
+            )
+
+    def test_an_assure_cell_with_a_worker_count_is_refused(self) -> None:
+        with self.assertRaises(benchmark.BenchmarkError) as raised:
+            benchmark.load_matrix(
+                self.matrix(
+                    '[[cell]]\nflow = "assure"\nmodel = "m"\neffort = "high"\nworker_count = 3\n'
+                )
+            )
+        self.assertIn("produces nothing", str(raised.exception))
+
+    def test_two_cells_of_different_flows_get_different_ids(self) -> None:
+        ids = {
+            benchmark.Cell("m", "high", 1, "implement").cell_id,
+            benchmark.Cell("m", "high", 1, "assure").cell_id,
+        }
+        self.assertEqual(len(ids), 2, "a cell id must survive a flow change")
+
+
+class CleanBaseTest(CorpusTestCase):
+    """A review cell diffs the seed against a defect-free base."""
+
+    def build_clean_corpus(self) -> Path:
+        path = self.build_corpus()
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        for task in manifest["tasks"]:
+            task["clean_path"] = f"clean/{task['task_id']}"
+            clean = self.root / task["clean_path"] / "src"
+            clean.mkdir(parents=True, exist_ok=True)
+            (clean / "module.py").write_text("VALUE = 0\n", encoding="utf-8")
+        path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return path
+
+    def test_a_clean_materialization_carries_the_overlay_not_the_seed(self) -> None:
+        corpus = benchmark.load_corpus(self.build_clean_corpus(), registry=self.registry)
+        repo = self.root / "repo-clean"
+        benchmark.materialize(corpus, repo, clean=True)
+        self.assertEqual(
+            (repo / "measure-variance" / "src" / "module.py").read_text(encoding="utf-8"),
+            "VALUE = 0\n",
+        )
+
+    def test_seeding_a_candidate_puts_the_defects_back(self) -> None:
+        corpus = benchmark.load_corpus(self.build_clean_corpus(), registry=self.registry)
+        repo = self.root / "repo-clean"
+        benchmark.materialize(corpus, repo, clean=True)
+        benchmark.seed_candidate(corpus, corpus.tasks[0], repo)
+        self.assertEqual(
+            (repo / "measure-variance" / "src" / "module.py").read_text(encoding="utf-8"),
+            "VALUE = 1\n",
+            "the candidate a review cell judges is the seed",
+        )
+
+    def test_a_corpus_without_a_clean_base_cannot_serve_a_review_cell(self) -> None:
+        corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        with self.assertRaises(benchmark.BenchmarkError) as raised:
+            benchmark.materialize(corpus, self.root / "repo-clean", clean=True)
+        self.assertIn("clean_path", str(raised.exception))
 
 
 class PresenceScoringTest(CorpusTestCase):

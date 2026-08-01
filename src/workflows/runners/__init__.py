@@ -69,6 +69,13 @@ class Telemetry:
     lens_id: str | None = None
     attempt: int = 1
     usage_events: int = 0
+    retry_reason: str | None = None
+    """Why this attempt exists — what the previous one got wrong.
+
+    A retry costs a whole call. Recording only that an attempt was the second
+    leaves no way to tell a fixable prompt or schema problem from model
+    variance, and a run directory that cannot answer that is not auditable.
+    """
 
     def to_document(self) -> dict[str, Any]:
         document: dict[str, Any] = {
@@ -82,6 +89,8 @@ class Telemetry:
         }
         if self.lens_id:
             document["lens_id"] = self.lens_id
+        if self.retry_reason:
+            document["retry_reason"] = self.retry_reason
         return document
 
     def to_record(self, **extra: Any) -> dict[str, Any]:
@@ -194,9 +203,16 @@ def invoke_validated(
     errors: tuple[ValidationError, ...] = ()
     current = call
 
+    retry_reason: str | None = None
+
     for attempt in range(1, MAX_ATTEMPTS + 1):
         result = runner.invoke(current)
-        result = replace(result, telemetry=replace(result.telemetry, attempt=attempt))
+        result = replace(
+            result,
+            telemetry=replace(
+                result.telemetry, attempt=attempt, retry_reason=retry_reason
+            ),
+        )
         attempts.append(result)
 
         if not result.completed:
@@ -224,6 +240,7 @@ def invoke_validated(
 
         if attempt == MAX_ATTEMPTS:
             break
+        retry_reason = "; ".join(str(error) for error in errors[:5])[:600]
         current = replace(call, prompt=retry_prompt(call.prompt, errors))
 
     return ValidatedResult(

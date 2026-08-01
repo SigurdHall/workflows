@@ -69,6 +69,18 @@ A probe answers whether the defect is there, not whether the candidate is
 good: a candidate that removed the planted defect and introduced a worse one
 probes ABSENT, and the report says so in its non-claims.
 
+A cell names its `flow`. `implement` and `fanout` measure a whole
+configuration — what a worker leaves and what review catches. An `assure`
+cell measures reviewer recall with no worker in the way, which is the
+cleanest thing this corpus can measure: each task declares a defect-free
+`clean_path` that the cell commits as its base, with the seed placed on top
+as the candidate, so the diff a reviewer judges is the one that *introduces*
+the planted defects.
+
+`adjudicate` cannot be a cell. It is reached from a conflict inside a flow,
+so a matrix that scheduled it would be inventing a conflict rather than
+measuring one.
+
 Fan-out gives each worker its own worktree from the frozen base, so workers
 never share a write target and none of them can see what another did. The
 synthesizer sees their candidates labelled by lens — a diff is a fact, an

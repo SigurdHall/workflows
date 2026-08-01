@@ -459,6 +459,47 @@ the manifest saying where the verdict could be wrong.
 The old `detected` count is kept in the report because earlier reports
 recorded it, and its description says to read `caught` instead.
 
+**D-M8-11 — A cell names its flow, and a review cell gets its own base.** The
+roadmap describes the matrix as {model, effort, worker count}, which can only
+schedule producing flows: width picks `implement` or `fanout` and nothing
+else. That leaves `assure` — the one flow that measures reviewer recall with
+no worker in the way — unmeasurable, and reviewer recall is what the roadmap
+asks the benchmark for.
+
+A cell may now name `flow`. `assure` needs a candidate it did not produce, so
+each task declares `clean_path`: a defect-free overlay on its seed. A review
+cell commits the clean tree as its base and puts the seed on top as an
+uncommitted candidate, so the diff a reviewer judges is the one that
+*introduces* the planted defects. Recall over such a cell is reviewer recall
+and nothing else.
+
+Two consequences, both deliberate. Review cells and producing cells no longer
+share a base commit — they cannot, since one needs the defects in the base and
+the other needs them in the candidate; cells of one kind still share theirs,
+which is what keeps them comparable. And `adjudicate` remains unschedulable: it
+is reached from a conflict inside a flow, not planned, so a matrix that named
+it would be inventing a conflict rather than measuring one. `load_matrix`
+refuses it with that reason rather than accepting it and running something
+else.
+
+**D-M8-12 — Telemetry records why a retry happened.** Not in the roadmap.
+Found while reading the first live matrix: two of three review calls on one
+task ran a second attempt, doubling that step's cost, and the run directory
+recorded only `attempt: 2`. An attempt number with no reason cannot tell a
+fixable prompt or schema problem from model variance, which is exactly the
+question a benchmark exists to answer. `Telemetry` now carries
+`retry_reason`, the validation errors that caused the retry, written on the
+attempt they caused.
+
+**D-M8-13 — A finding's lens attribution is written by code, not accepted
+from the model.** Found in the first live matrix's lens-yield table: a
+level-2 reviewer running `review/scope-integrity` wrote
+`review/scope-integrity-v1` into its findings, and `setdefault` kept the
+model's value because the field was not empty. The yield table then showed one
+lens as two, each with half the findings — corrupting exactly the telemetry
+ADR 0002 says lens sets must be tuned on. Which lens produced a finding is
+bookkeeping the step already knows; it is now overwritten unconditionally.
+
 **D-M8-4 — A benchmark cell is a program run, not a new orchestrator.** The
 roadmap says "reusing program infrastructure"; a cell writes a generated
 plan into the work root, resolves it against the materialized corpus

@@ -396,6 +396,71 @@ class CodexInvocationTest(unittest.TestCase):
         self.assertEqual(seen["stdin"], "the composed prompt")
 
 
+class RetryReasonTest(unittest.TestCase):
+    """A retry costs a whole call, so the run directory records why it happened."""
+
+    SCHEMA = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["value"],
+        "properties": {"value": {"type": "integer"}},
+    }
+
+    def call(self) -> runners.RunnerCall:
+        return runners.RunnerCall(
+            prompt="produce a value",
+            output_schema=self.SCHEMA,
+            model="m",
+            effort="high",
+            cwd=Path("."),
+        )
+
+    def runner(self, *outputs):
+        """A runner that returns each queued output in turn."""
+        queued = list(outputs)
+
+        class Queued:
+            name = "queued"
+
+            def invoke(self, call):
+                return runners.RunnerResult(
+                    status="COMPLETED",
+                    reason_code="clean",
+                    output=queued.pop(0),
+                    telemetry=runners.Telemetry(
+                        runner="queued",
+                        model=call.model,
+                        effort=call.effort,
+                        dry=False,
+                        duration_ms=1,
+                        tokens=runners.TokenUsage(),
+                    ),
+                )
+
+        return Queued()
+
+    def test_a_clean_first_attempt_records_no_reason(self) -> None:
+        result = runners.invoke_validated(
+            self.runner({"value": 1}), self.call(), registry=support.registry()
+        )
+        self.assertEqual(result.status, "COMPLETED")
+        self.assertIsNone(result.attempts[0].telemetry.retry_reason)
+        self.assertNotIn("retry_reason", result.attempts[0].telemetry.to_document())
+
+    def test_a_retry_carries_what_the_previous_attempt_got_wrong(self) -> None:
+        result = runners.invoke_validated(
+            self.runner({"value": "not an integer"}, {"value": 2}),
+            self.call(),
+            registry=support.registry(),
+        )
+        self.assertEqual(result.status, "COMPLETED")
+        self.assertEqual(len(result.attempts), 2)
+        reason = result.attempts[1].telemetry.retry_reason
+        self.assertTrue(reason, "an attempt number with no reason explains nothing")
+        self.assertIn("value", reason)
+        self.assertIn("retry_reason", result.attempts[1].telemetry.to_document())
+
+
 class ProviderSchemaTest(unittest.TestCase):
     """What leaves the process is not what this repository validates against.
 

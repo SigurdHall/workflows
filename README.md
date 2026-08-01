@@ -128,7 +128,28 @@ them — including the schema flattening and the sandbox caveat that a live run
 runs into.
 
 Measurements from real runs live in [docs/evidence/](docs/evidence/), which
-also lists what is still unmeasured. That list is longer than this one.
+also lists what is still unmeasured.
+
+## Measuring the defaults
+
+Every number in this repository — three to five workers, a level-2 threshold
+of HIGH, a lens set of ten — started as an assertion. The `benchmark` flow is
+how they stop being one. It runs a matrix of cells against a corpus of tasks
+with planted defects and a hidden answer key:
+
+```
+python -m workflows.benchmark run <corpus.json> --matrix m.toml \
+    --work-root <outside this repository> --profile profile.toml \
+    --task <id> --budget-tokens 1500000
+```
+
+Each planted defect carries an executable **presence probe** run against the
+candidate afterwards, because a cell runs a producing step and a worker that
+fixes a defect leaves nothing for a reviewer to catch. Recall is therefore
+`caught / present`; `removed` and `indeterminate` are reported beside it and
+folded into neither. A cell that names `flow = "assure"` measures reviewer
+recall with no worker in the way, diffing the seed against the corpus's
+defect-free base.
 
 ## Using the validator
 
@@ -162,12 +183,20 @@ What that does and does not mean:
   prompts, gate results, run manifests and verdicts end to end, and resume
   without repeating a completed step. A dry run calls no model and never
   reports PASS.
-- **Live-tested.** An `implement` flow has run end to end against a live
-  model, both standalone and through a benchmark cell over a corpus task.
-  Both are recorded with their telemetry in
-  [docs/evidence/](docs/evidence/), along with the defects those runs
-  exposed. Nothing is calibrated yet: the worker counts, the ladder
-  thresholds and the lens set are still asserted, and no matrix has run.
+- **Live-tested, and benchmarked once.** `implement`, `fanout` and `assure`
+  have run end to end against a live model, and a four-cell matrix over the
+  Tier A corpus has scored them — 9.3M input tokens, recorded in
+  [docs/evidence/](docs/evidence/) with the defects it exposed.
+- **What the benchmark says.** `assure` caught **12 of 12** planted defects.
+  Both review lenses yield; neither is a candidate for retirement. Fan-out of
+  three removed the same defects as one worker and cost **2.4×** — the first
+  measurement against the 3–5 default, and it goes against it.
+- **What the benchmark found wrong here.** Six reviewers across two producing
+  flows marked an acceptance criterion PASS while the defect that criterion
+  names was live in the candidate. A review prompt carries the contract and
+  the worker's *diff*, not the code the criteria are about. **Treat a
+  producing flow's PASS as "nothing wrong in the change", not as "the contract
+  holds."** Open; see the benchmark record.
 - **Declared but not implemented.** Ladder level 4 needs a second runner
   family. Until one exists it never runs, and every verdict says so in its
   non-claims rather than skipping it silently.

@@ -256,7 +256,13 @@
         "duration_ms": { "type": "integer", "minimum": 0 },
         "tokens": { "$ref": "#/$defs/token_usage" },
         "lens_id": { "$ref": "#/$defs/identifier" },
-        "attempt": { "type": "integer", "minimum": 1, "maximum": 100 }
+        "attempt": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "retry_reason": {
+          "description": "What the previous attempt got wrong. A retry costs a whole call, and an attempt number with no reason cannot tell a fixable prompt or schema problem from model variance.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        }
       }
     },
     "candidate": {

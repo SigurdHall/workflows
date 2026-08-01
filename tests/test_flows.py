@@ -200,6 +200,56 @@ class FlowTestCase(unittest.TestCase):
             self.assertEqual([str(e) for e in errors], [], f"{path.name} must validate")
 
 
+class LensAttributionTest(FlowTestCase):
+    """Which lens raised a finding is bookkeeping, so code decides it.
+
+    Observed in the first live matrix: a level-2 reviewer wrote
+    `review/scope-integrity-v1` into its findings while running the lens
+    `review/scope-integrity`. Trusting the model split one lens into two in
+    the yield telemetry — the very telemetry lens sets are meant to be tuned
+    on.
+    """
+
+    def envelope(self, findings: list[dict]) -> dict:
+        runner = DryRunner(registry=self.registry)
+        return base.review_envelope(
+            self.context(runner),
+            "review-l2-r0",
+            {"result": "FAIL", "findings": findings},
+            lens_id="review/scope-integrity",
+            ladder_level=2,
+            candidate=None,
+        )
+
+    def finding(self, **overrides) -> dict:
+        return {
+            "id": "F-1",
+            "severity": "HIGH",
+            "status": "OPEN",
+            "claim": "Something is wrong.",
+            "evidence_refs": ["probe-1"],
+            "required_action": "Fix it.",
+            "negative_path_claim": False,
+            **overrides,
+        }
+
+    def test_a_near_miss_of_the_lens_id_is_corrected_not_kept(self) -> None:
+        envelope = self.envelope([self.finding(lens_id="review/scope-integrity-v1")])
+        self.assertEqual(envelope["findings"][0]["lens_id"], "review/scope-integrity")
+
+    def test_a_finding_with_no_lens_id_still_gets_one(self) -> None:
+        envelope = self.envelope([self.finding()])
+        self.assertEqual(envelope["findings"][0]["lens_id"], "review/scope-integrity")
+
+    def test_a_model_cannot_attribute_a_finding_to_another_lens(self) -> None:
+        envelope = self.envelope([self.finding(lens_id="review/closed-contract")])
+        self.assertEqual(
+            envelope["findings"][0]["lens_id"],
+            "review/scope-integrity",
+            "the step knows which lens it composed; the model does not decide",
+        )
+
+
 class DryRunTest(FlowTestCase):
     def test_implement_dry_run_materializes_a_complete_resumable_run(self) -> None:
         runner = DryRunner(registry=self.registry)

@@ -1,7 +1,18 @@
-# Ready to run: the first benchmark matrix
+# The next benchmark matrix
 
-Everything below is set up and verified. This is the next session's starting
-point, not a plan to be re-derived.
+**The first one has run.** Results in
+[benchmark-2026-08-01-tier-a.md](benchmark-2026-08-01-tier-a.md); this file is
+now the recipe for the *next* one, and the open question it should answer.
+
+## What the first run left open
+
+The one thing to fix before spending again: **the review prompt carries the
+diff, not the code the acceptance criteria are about.** Six reviewers across
+two producing flows passed a criterion whose defect was live. Until that is
+addressed, an `implement` or `fanout` cell measures diff review, and the
+recall figures from those cells mean less than the `assure` ones.
+
+A second matrix that changed nothing else would mostly re-measure it.
 
 ## What is already true
 

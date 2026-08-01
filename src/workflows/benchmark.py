@@ -133,7 +133,13 @@ BUILD_ARTIFACT_IGNORES = (
 )
 
 
-def materialize(corpus: Corpus, target: Path, *, task_ids: Sequence[str] | None = None) -> str:
+def materialize(
+    corpus: Corpus,
+    target: Path,
+    *,
+    task_ids: Sequence[str] | None = None,
+    clean: bool = False,
+) -> str:
     """Build the benchmark repository a run will see, and commit it.
 
     Only seed trees are copied. The manifest — the answer key — stays where
@@ -159,6 +165,16 @@ def materialize(corpus: Corpus, target: Path, *, task_ids: Sequence[str] | None 
             target / task["task_id"],
             dirs_exist_ok=True,
         )
+        if clean:
+            overlay = task.get("clean_path")
+            if not overlay:
+                raise BenchmarkError(
+                    f"task {task['task_id']!r} declares no clean_path, so there is "
+                    "no defect-free base for a review cell to diff against"
+                )
+            shutil.copytree(
+                corpus.root / overlay, target / task["task_id"], dirs_exist_ok=True
+            )
     (target / ".gitignore").write_text(
         "\n".join(BUILD_ARTIFACT_IGNORES) + "\n", encoding="utf-8"
     )
@@ -447,27 +463,72 @@ def findings_from_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
 # --------------------------------------------------------------------------
 
 
+CELL_FLOWS = ("implement", "fanout", "assure")
+
+
+def seed_candidate(corpus: Corpus, task: dict[str, Any], worktree: Path) -> None:
+    """Put the defective source into a worktree cut from the clean base.
+
+    An `assure` cell reviews a candidate it did not produce, so something has
+    to place one. Here it is the seed: the diff a reviewer sees is the one
+    that *introduces* the planted defects, which is what makes recall over an
+    assure cell mean reviewer recall and nothing else.
+    """
+    shutil.copytree(
+        corpus.root / task["seed_path"] / "src",
+        worktree / task["task_id"] / "src",
+        dirs_exist_ok=True,
+    )
+
+
 @dataclass(frozen=True)
 class Cell:
     model: str
     effort: str
     worker_count: int
+    flow: str = ""
+
+    @property
+    def resolved_flow(self) -> str:
+        """What this cell runs. Width picks it when the cell does not say."""
+        return self.flow or ("fanout" if self.worker_count > 1 else "implement")
+
+    @property
+    def reviews_only(self) -> bool:
+        return self.resolved_flow == "assure"
 
     @property
     def cell_id(self) -> str:
-        return f"{self.model}-{self.effort}-w{self.worker_count}".replace("/", "-")
+        return (
+            f"{self.resolved_flow}-{self.model}-{self.effort}-w{self.worker_count}"
+        ).replace("/", "-")
 
 
 def load_matrix(path: Path) -> list[Cell]:
     document = tomllib.loads(path.read_text(encoding="utf-8-sig"))
-    cells = [
-        Cell(
+    cells = []
+    for entry in document.get("cell", []):
+        flow = str(entry.get("flow", "") or "")
+        if flow and flow not in CELL_FLOWS:
+            raise BenchmarkError(
+                f"{path}: a cell cannot run {flow!r}. A matrix schedules "
+                f"{', '.join(CELL_FLOWS)}; adjudicate is reached from a "
+                "conflict inside a flow, not planned"
+            )
+        cell = Cell(
             model=str(entry["model"]),
             effort=str(entry["effort"]),
             worker_count=int(entry.get("worker_count", 1)),
+            flow=flow,
         )
-        for entry in document.get("cell", [])
-    ]
+        if cell.resolved_flow == "fanout" and cell.worker_count < 2:
+            raise BenchmarkError(f"{path}: a fanout cell needs worker_count above 1")
+        if cell.reviews_only and cell.worker_count != 1:
+            raise BenchmarkError(
+                f"{path}: an assure cell produces nothing, so worker_count "
+                "means nothing to it; leave it at 1"
+            )
+        cells.append(cell)
     if not cells:
         raise BenchmarkError(f"{path} declares no [[cell]] entries")
     return cells
@@ -518,11 +579,11 @@ def plan_for(
             "task_id": task["task_id"],
             "repo_id": "corpus",
             "contract_path": f"contracts/{task['task_id']}.json",
-            "flow": "fanout" if cell.worker_count > 1 else "implement",
+            "flow": cell.resolved_flow,
             "write_scope": list(contract.get("scope", {}).get("allowed_paths", [])),
             "review_lens_set": list(DEFAULT_REVIEW_LENSES),
         }
-        if cell.worker_count > 1:
+        if cell.resolved_flow == "fanout":
             entry["lens_set"] = list(DEFAULT_WORK_LENSES[: cell.worker_count])
         tasks.append(entry)
 
@@ -599,14 +660,26 @@ def run_matrix(
             )
     registry = registry or default_registry()
     started_at = utc_now()
-    repo = work_root / "repo"
-    base_commit = (
-        gitcmd.head_commit(repo) if (repo / ".git").exists() else materialize(corpus, repo)
-    )
 
+    def repository(clean: bool) -> tuple[Path, str]:
+        """The repository a cell starts from, built once and reused.
+
+        Producing cells start from the defective seed and are measured on what
+        they leave behind. A review cell starts from a defect-free base with
+        the seed as its candidate, so the diff it judges is the one that
+        introduces the defects. Two bases, deliberately: cells of one kind
+        still share theirs, which is what keeps them comparable.
+        """
+        path = work_root / ("repo-clean" if clean else "repo")
+        if (path / ".git").exists():
+            return path, gitcmd.head_commit(path)
+        return path, materialize(corpus, path, clean=clean)
+
+    by_id = {task["task_id"]: task for task in corpus.tasks}
     results: list[tuple[Cell, Score, dict[str, int], int]] = []
     for cell in cells:
         began = time.monotonic()
+        repo, base_commit = repository(cell.reviews_only)
         plan_path = plan_for(
             corpus,
             cell,
@@ -633,6 +706,15 @@ def run_matrix(
                 resolved=True,
             ),
         )
+        if cell.reviews_only:
+            # The worktrees are cut from the clean base, so the candidate has
+            # to be placed in them before the flow looks. prepare() is
+            # idempotent and execute() reuses a worktree that already exists.
+            engine.prepare()
+            for resolved_task in resolved.tasks:
+                worktree = engine.task_worktree(resolved_task)
+                seed_candidate(corpus, by_id[resolved_task.task_id], worktree)
+
         program_report = engine.execute()
         # A dry run judged nothing, so probing its untouched worktrees would
         # report every defect present and every one missed. Leaving them

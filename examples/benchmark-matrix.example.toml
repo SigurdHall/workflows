@@ -1,4 +1,4 @@
-# A benchmark matrix: one cell per {model, effort, worker count} combination.
+# A benchmark matrix: one cell per configuration to measure.
 #
 # Run it against a corpus with:
 #     python -m workflows.benchmark run examples/corpus/tier-a/corpus.json \
@@ -16,12 +16,27 @@
 # Budgets are per cell (`--budget-tokens`), so a four-cell matrix can cost
 # four times what one cell's budget allows.
 
+# Reviewer recall with no worker in the way: the base is the corpus's
+# defect-free tree and the candidate is the seed, so the diff under review is
+# the one that introduces the planted defects. The cleanest measurement here,
+# and the cheapest — no producing step at all.
 [[cell]]
+flow = "assure"
+model = "worker-class"
+effort = "high"
+worker_count = 1
+
+# The whole configuration end to end: what a worker leaves behind and what
+# review then catches. Omit `flow` and worker_count = 1 means the same thing.
+[[cell]]
+flow = "implement"
 model = "worker-class"
 effort = "medium"
 worker_count = 1
 
+# The same, at a different effort. One variable at a time.
 [[cell]]
+flow = "implement"
 model = "worker-class"
 effort = "high"
 worker_count = 1
@@ -29,11 +44,11 @@ worker_count = 1
 # Fan-out width is the variable the repository's "3-5 workers" default rests
 # on. It is asserted, not measured, until a cell like this one measures it.
 [[cell]]
+flow = "fanout"
 model = "worker-class"
 effort = "medium"
 worker_count = 3
 
-[[cell]]
-model = "strongest-same-family"
-effort = "high"
-worker_count = 1
+# `adjudicate` is deliberately absent. It is reached from a conflict inside a
+# flow, so a matrix that scheduled it would be inventing a conflict rather
+# than measuring one; declaring it here is refused with that reason.

@@ -485,7 +485,12 @@ def review_envelope(
     if lens_id:
         envelope["lens_id"] = lens_id
         for finding in envelope["findings"]:
-            finding.setdefault("lens_id", lens_id)
+            # Overwritten, not filled in. Which lens produced a finding is
+            # bookkeeping the step already knows, and a model that writes a
+            # near-miss of the id — observed live: `review/scope-integrity-v1`
+            # against a lens called `review/scope-integrity` — splits one lens
+            # into two in the yield telemetry that lens sets are tuned on.
+            finding["lens_id"] = lens_id
     if candidate is not None:
         envelope["candidate"] = candidate
     return _dedupe_non_claims(envelope)
