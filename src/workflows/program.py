@@ -732,7 +732,7 @@ def _program_run_id(resolved: ResolvedPlan, given: str | None) -> str:
     return f"program-{resolved.plan['plan_id']}-{resolved.digest[7:19]}"
 
 
-def main(argv: list[str] | None = None) -> int:
+def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m workflows.program", description=__doc__.split("\n")[0]
     )
@@ -756,6 +756,15 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="deployment profile binding roles to concrete models; required for a live run",
     )
+    run_parser.add_argument(
+        "--dangerously-bypass-sandbox",
+        action="store_true",
+        help=(
+            "run producing roles without the provider's sandbox. Only where "
+            "the sandbox refuses writes a worker legitimately needs; the scope "
+            "and protected-hash gates remain the actual check"
+        ),
+    )
 
     resume_parser = sub.add_parser("resume", help="continue a program run")
     resume_parser.add_argument("run_id")
@@ -763,8 +772,12 @@ def main(argv: list[str] | None = None) -> int:
     resume_parser.add_argument("--runs", type=Path, default=Path("runs"))
     resume_parser.add_argument("--max-parallel-workers", type=int, default=1)
     resume_parser.add_argument("--profile", type=Path, default=None)
+    resume_parser.add_argument("--dangerously-bypass-sandbox", action="store_true")
+    return parser
 
-    args = parser.parse_args(argv)
+
+def main(argv: list[str] | None = None) -> int:
+    args = argument_parser().parse_args(argv)
     try:
         if args.command == "run":
             return _run(args)
@@ -797,6 +810,18 @@ def _profile_for(args: argparse.Namespace, dry_run: bool) -> Profile:
     return profile
 
 
+def _runner_factory(args: argparse.Namespace, dry_run: bool) -> Any:
+    """A live program builds its own runners, one per task thread.
+
+    The bypass is per invocation and never persisted into the manifest: a
+    resume that wants it has to ask for it again, in writing.
+    """
+    if dry_run:
+        return None
+    bypass = bool(getattr(args, "dangerously_bypass_sandbox", False))
+    return lambda: CodexRunner(bypass_sandbox=bypass)
+
+
 def _run(args: argparse.Namespace) -> int:
     profile = _profile_for(args, bool(args.dry_run))
     resolved = resolve(args.plan, worktree=args.worktree.resolve())
@@ -817,6 +842,7 @@ def _run(args: argparse.Namespace) -> int:
         dry_run=bool(args.dry_run),
         max_parallel_workers=args.max_parallel_workers,
         profile=profile,
+        runner_factory=_runner_factory(args, bool(args.dry_run)),
     )
     report = program.execute()
     print("\n" + summarize(report))
@@ -853,6 +879,7 @@ def _resume(args: argparse.Namespace) -> int:
         dry_run=bool(manifest.get("dry_run")),
         max_parallel_workers=args.max_parallel_workers,
         profile=_profile_for(args, bool(manifest.get("dry_run"))),
+        runner_factory=_runner_factory(args, bool(manifest.get("dry_run"))),
     )
     report = program.execute()
     print(summarize(report))

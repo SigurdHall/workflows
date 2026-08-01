@@ -34,7 +34,10 @@ unmeasured.
 | Question | Status |
 |---|---|
 | Does a flow work end to end against a live model? | Yes — `live-run-2026-08-01-percent-change.md` |
-| What does one small `implement` run cost? | One data point, in that record |
+| Does a benchmark cell run a live flow over a corpus task? | Yes — `live-probe-2026-08-01-benchmark-cell.md` |
+| What does one small `implement` run cost? | Two data points, in those records |
+| Does per-class recall measure reviewer recall? | **No** — over an `implement` cell it conflates "the worker fixed it" with "every reviewer missed it". Demonstrated in the probe record |
+| Does a flow refuse to conclude when a reviewer dies? | Yes, observed live: BLOCKED, not PASS, on one surviving reviewer that passed every criterion |
 | Is a fast worker-class model the best level-1 reviewer? | **Unmeasured.** The claim comes from the motivating experiments, not from this repository |
 | Is fan-out of 3–5 workers worth it over 1? | **Unmeasured.** The benchmark matrix exists to answer it |
 | Which lenses actually yield findings? | **Unmeasured.** Needs benchmark runs with lens attribution |

@@ -20,7 +20,7 @@
           "triggering_probe": "Recompute the portfolio percentage as sum(actual)/sum(budget) across all departments and compare it against portfolio_percent_variance(rows); the two disagree because the function returns the mean of each department's own percent variance instead of recomputing the ratio from summed totals.",
           "description": "portfolio_percent_variance averages the per-department percent variances (a mean of ratios) instead of recomputing the percentage from summed budget and summed actual (a ratio of sums). The two methods agree only when every department has the same budget, which is not the case in the fixture, so the reported portfolio percentage is silently wrong for any unequal weighting of departments.",
           "survives": [
-            "the happy-path unit test, whose expected value was hand-computed with the same mean-of-ratios method",
+            "the happy-path unit test, which only checks that the portfolio figure is a number and never asserts what it should be",
             "any check that only inspects a single department's percent variance in isolation"
           ]
         },

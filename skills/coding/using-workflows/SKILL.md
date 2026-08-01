@@ -97,7 +97,18 @@ Each of these is a failure that happened, not a hypothetical:
   substitute a real commit rather than running it in place.
 - **The target repository needs `__pycache__/` ignored**, or any command you
   run before the flow leaves the worktree dirty and `base_identity` refuses to
-  start. The gate is right; the repository is missing a line.
+  start. The gate is right; the repository is missing a line. This bites twice:
+  a *worker* that runs the project's own tests leaves the same artifacts, and
+  then `scope` and `protected_hash` fail work it never did — while
+  `candidate_changed` passes on those artifacts, so a worker that changed
+  nothing clears the gate that exists to catch exactly that. An unignored build
+  artifact does not just add noise; it defeats a gate.
+- **A contract whose protected tests pin the wrong answer cannot be
+  satisfied.** If a test the contract protects asserts the behaviour an
+  acceptance criterion says is wrong, no candidate inside the allowed scope can
+  pass both. A good worker will produce nothing and say why in its non-claims;
+  read those before assuming it failed. The fix is to the contract or the test,
+  not to the worker.
 - **The provider's sandbox may refuse writes a worker needs.** On at least one
   Windows host `workspace-write` still reports a read-only workspace, and the
   worker then produces an empty candidate — which the `candidate_changed` gate

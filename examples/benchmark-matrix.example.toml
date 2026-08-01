@@ -5,10 +5,16 @@
 #         --matrix examples/benchmark-matrix.example.toml \
 #         --work-root <somewhere outside this repository> --dry-run
 #
-# Model names are provider-unresolved role bindings, not literal model ids:
-# a deployment profile maps them. Keep the cells few and the differences
-# deliberate — a matrix is an experiment, and every extra cell is a real
-# cost with no hypothesis attached.
+# The model names below are provider-unresolved role bindings, not literal
+# model ids. A live run refuses them: a cell binds every role directly, so a
+# real matrix names the model ids your runner serves. Copy this file and
+# substitute them; `--profile` then supplies only what a cell does not name,
+# per-role sandboxes above all.
+#
+# Keep the cells few and the differences deliberate — a matrix is an
+# experiment, and every extra cell is a real cost with no hypothesis attached.
+# Budgets are per cell (`--budget-tokens`), so a four-cell matrix can cost
+# four times what one cell's budget allows.
 
 [[cell]]
 model = "worker-class"

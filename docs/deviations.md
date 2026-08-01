@@ -398,6 +398,46 @@ made — in a dry run where no worker had been called at all. A gate must not
 be blamed on the candidate. Only untracked files that did not exist before
 the command are removed.
 
+**D-M8-6 — A live matrix refuses cells whose model is a role placeholder.**
+Not in the roadmap. A matrix is provider-unresolved like everything else
+here, and the example matrix names `worker-class` deliberately. Sending that
+to a provider fails at the first call, so `run_matrix` checks the cell models
+against the built-in role names before materializing anything. A dry run
+still accepts them: nothing is called.
+
+**D-M8-7 — The matrix CLI takes `--profile`, `--task`, `--budget-tokens`,
+`--budget-seconds` and `--dangerously-bypass-sandbox`.** The roadmap only
+asked for a dry-run matrix. A live one needs all five: a profile for per-role
+sandboxes, a task filter so a first run costs two tasks rather than six,
+budgets that stop a cell rather than a warning in a document, and the sandbox
+bypass the Codex runner needs on this host. Budgets are per cell, not per
+matrix, and the CLI help says so.
+
+**D-M8-8 — The generated benchmark repository gets a `.gitignore`.** Found by
+a live probe on 2026-08-01, not by any dry run. The corpus seeds are Python
+and carry no ignore file, so the worker's own test run left `__pycache__`
+inside the contract's protected paths. Two consequences, both wrong: `scope`
+and `protected_hash` failed work the worker never did, and — worse —
+`candidate_changed` *passed* on the artifacts, so a worker that changed
+nothing cleared the one gate that exists to catch exactly that. Vacuous
+success is defect class 3; the gate that guards it was defeated by build
+output. `materialize()` now writes an ignore file, and the same probe
+re-run failed correctly with "the worktree is byte-identical to the frozen
+base".
+
+**D-M8-9 — One corpus task's protected test was rewritten: its contract was
+unsatisfiable.** `measure-variance` planted the aggregation defect *and*
+pinned the defective value in a protected test
+(`assertAlmostEqual(portfolio_percent_variance(rows), 20.0/3)`). AC-1 demands
+the verification command exit zero and AC-2 demands the ratio of sums, so no
+candidate inside the allowed scope could satisfy both. A live worker
+diagnosed this in its own non-claims and correctly produced nothing. The test
+now asserts only that the portfolio figure is a number, which preserves the
+property the corpus exists for — the defect survives a green happy-path run —
+without making it impossible to fix. The other eleven planted defects were
+checked against the manifest's own `survives` entries; they describe
+incomplete tests, not tests that encode the defect.
+
 **D-M8-4 — A benchmark cell is a program run, not a new orchestrator.** The
 roadmap says "reusing program infrastructure"; a cell writes a generated
 plan into the work root, resolves it against the materialized corpus

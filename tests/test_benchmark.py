@@ -143,6 +143,26 @@ class MaterializeTest(CorpusTestCase):
             "a corpus a reviewer can read measures nothing",
         )
 
+    def test_build_artifacts_are_ignored_so_gates_read_the_work(self) -> None:
+        """A worker that runs the project's tests leaves `__pycache__` behind.
+
+        Without a `.gitignore` those are untracked additions: they fail
+        `scope` and `protected_hash` for work the worker never did, and they
+        satisfy `candidate_changed`, which is the gate that exists to catch a
+        worker that changed nothing. Observed in a live probe, 2026-08-01.
+        """
+        from workflows import gitcmd
+
+        corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        repo = self.root / "repo"
+        commit = benchmark.materialize(corpus, repo)
+        cache = repo / "measure-variance" / "tests" / "__pycache__"
+        cache.mkdir(parents=True, exist_ok=True)
+        (cache / "test_variance.cpython-314.pyc").write_bytes(b"\x00")
+        self.assertEqual(
+            gitcmd.changes(repo, commit), [], "a build artifact is not a candidate"
+        )
+
     def test_it_refuses_to_overwrite_an_existing_repository(self) -> None:
         corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
         target = self.root / "repo"
@@ -415,6 +435,97 @@ class MatrixRunTest(CorpusTestCase):
         plan = json.loads((work / "plans" / "m-high-w3" / "plan.json").read_text(encoding="utf-8"))
         self.assertEqual({task["flow"] for task in plan["tasks"]}, {"fanout"})
         self.assertEqual({len(task["lens_set"]) for task in plan["tasks"]}, {3})
+
+
+class SubsetTest(CorpusTestCase):
+    """Trimming a corpus for a first live run, without editing a copy of it."""
+
+    def test_a_subset_keeps_the_corpus_identity(self) -> None:
+        corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        trimmed = corpus.subset(["triage-router"])
+        self.assertEqual(trimmed.corpus_id, corpus.corpus_id)
+        self.assertEqual(trimmed.root, corpus.root)
+        self.assertEqual([t["task_id"] for t in trimmed.tasks], ["triage-router"])
+        self.assertEqual(len(corpus.tasks), 2, "the original is not mutated")
+
+    def test_a_subset_scores_only_its_own_defects(self) -> None:
+        corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        result = benchmark.score(corpus.subset(["triage-router"]), {})
+        self.assertEqual(result.planted, 1, "the two measure-variance defects are out")
+
+    def test_an_unknown_task_id_is_refused_with_the_ones_that_exist(self) -> None:
+        corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        with self.assertRaises(benchmark.BenchmarkError) as raised:
+            corpus.subset(["triage-router", "no-such-task"])
+        self.assertIn("no-such-task", str(raised.exception))
+        self.assertIn("measure-variance", str(raised.exception), "it names the real ones")
+
+    def test_the_report_names_the_tasks_it_scored(self) -> None:
+        corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        document = benchmark.report(
+            corpus.subset(["triage-router"]),
+            [
+                (
+                    benchmark.Cell("m", "high", 1),
+                    benchmark.Score(),
+                    {"new_input": 0, "cached_input": 0, "output": 0},
+                    1,
+                )
+            ],
+            dry_run=False,
+            started_at="2026-08-01T00:00:00Z",
+            registry=self.registry,
+        )
+        claim = [c for c in document["non_claims"] if c.startswith("Scored over")]
+        self.assertEqual(len(claim), 1)
+        self.assertIn("triage-router", claim[0])
+        self.assertNotIn("measure-variance", claim[0])
+
+
+class PlaceholderModelTest(CorpusTestCase):
+    """A matrix names models. The example matrix names roles, deliberately."""
+
+    def test_a_live_matrix_of_role_placeholders_is_refused(self) -> None:
+        corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        with self.assertRaises(benchmark.BenchmarkError) as raised:
+            benchmark.run_matrix(
+                corpus,
+                [benchmark.Cell("worker-class", "medium", 1)],
+                work_root=self.root / "work",
+                dry_run=False,
+                registry=self.registry,
+            )
+        self.assertIn("worker-class", str(raised.exception))
+        self.assertFalse(
+            (self.root / "work" / "repo").exists(),
+            "it refuses before materializing anything",
+        )
+
+    def test_a_dry_run_of_role_placeholders_is_allowed(self) -> None:
+        self.assertEqual(
+            benchmark.unresolved_models([benchmark.Cell("gpt-x", "high", 1)]), []
+        )
+        self.assertEqual(
+            benchmark.unresolved_models([benchmark.Cell("worker-class", "high", 1)]),
+            ["worker-class"],
+        )
+
+
+class CellBudgetTest(CorpusTestCase):
+    """Budgets are per cell, so a live matrix sets them deliberately."""
+
+    def test_plan_for_writes_the_budgets_it_was_given(self) -> None:
+        corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        path = benchmark.plan_for(
+            corpus,
+            benchmark.Cell("m", "high", 1),
+            "0" * 40,
+            self.root / "plans",
+            budget_tokens=1234,
+            budget_seconds=56,
+        )
+        plan = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(plan["budgets"], {"tokens": 1234, "wall_clock_seconds": 56})
 
 
 class CliTest(CorpusTestCase):

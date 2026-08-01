@@ -416,6 +416,31 @@ class CheckpointTest(ProgramTestCase):
         self.assertEqual(len(report["tasks"]), 3)
 
 
+class SandboxBypassTest(ProgramTestCase):
+    """The bypass is opt-in per invocation, and a dry run never builds a runner."""
+
+    def factory(self, *argv: str):
+        parsed = program.argument_parser().parse_args(list(argv))
+        return parsed, program._runner_factory(parsed, bool(parsed.dry_run))
+
+    def test_a_dry_run_builds_no_live_runner(self) -> None:
+        _, factory = self.factory("run", "p.toml", "--dry-run")
+        self.assertIsNone(factory, "a dry run must not reach a provider at all")
+
+    def test_the_bypass_is_off_unless_asked_for(self) -> None:
+        _, factory = self.factory("run", "p.toml")
+        self.assertFalse(factory().bypass_sandbox)
+
+    def test_the_bypass_reaches_the_runner_when_asked_for(self) -> None:
+        _, factory = self.factory("run", "p.toml", "--dangerously-bypass-sandbox")
+        self.assertTrue(factory().bypass_sandbox)
+
+    def test_a_resume_has_to_ask_for_the_bypass_again(self) -> None:
+        parsed = program.argument_parser().parse_args(["resume", "run-1"])
+        self.assertFalse(parsed.dangerously_bypass_sandbox)
+        self.assertFalse(program._runner_factory(parsed, False)().bypass_sandbox)
+
+
 class ExecutionTest(ProgramTestCase):
     def test_a_three_task_dry_run_produces_one_valid_report(self) -> None:
         plan = self.three_task_plan()

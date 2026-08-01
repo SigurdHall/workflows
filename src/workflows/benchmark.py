@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from workflows import gitcmd
+from workflows.flows.base import FlowError
 from workflows.runs import utc_now
 from workflows.schema import SchemaError, default_registry
 from workflows.semantics import check_document
@@ -75,6 +76,26 @@ class Corpus:
             for defect in task["defects"]
         ]
 
+    def subset(self, task_ids: Sequence[str]) -> Corpus:
+        """The same corpus restricted to named tasks.
+
+        A first live matrix should cost two tasks, not six, and trimming here
+        rather than by editing a copy of the corpus keeps the answer key and
+        the corpus id identical to the full run's — the scores stay
+        comparable, and the report says which subset produced them.
+        """
+        wanted = list(dict.fromkeys(task_ids))
+        known = {task["task_id"] for task in self.tasks}
+        missing = [task_id for task_id in wanted if task_id not in known]
+        if missing:
+            raise BenchmarkError(
+                f"corpus {self.corpus_id} has no task {', '.join(missing)}. "
+                f"It has: {', '.join(sorted(known))}"
+            )
+        manifest = dict(self.manifest)
+        manifest["tasks"] = [t for t in self.tasks if t["task_id"] in set(wanted)]
+        return Corpus(manifest=manifest, root=self.root)
+
 
 def load_corpus(path: Path, *, registry: Any = None) -> Corpus:
     registry = registry or default_registry()
@@ -103,12 +124,29 @@ def load_corpus(path: Path, *, registry: Any = None) -> Corpus:
     return Corpus(manifest=manifest, root=root)
 
 
+BUILD_ARTIFACT_IGNORES = (
+    "__pycache__/",
+    "*.py[cod]",
+    ".pytest_cache/",
+    ".ruff_cache/",
+    ".mypy_cache/",
+)
+
+
 def materialize(corpus: Corpus, target: Path, *, task_ids: Sequence[str] | None = None) -> str:
     """Build the benchmark repository a run will see, and commit it.
 
     Only seed trees are copied. The manifest — the answer key — stays where
     it is, because a corpus a reviewer can read is a corpus that measures
     nothing.
+
+    The repository gets a `.gitignore` for build artifacts, because without
+    one every gate downstream misreads the run. A worker that runs the
+    project's own tests leaves `__pycache__` behind; those files are
+    untracked additions inside the contract's protected paths, so `scope` and
+    `protected_hash` fail work the worker never did — and worse,
+    `candidate_changed` passes on them, so a worker that changed nothing
+    clears the one gate that exists to catch exactly that.
     """
     target.mkdir(parents=True, exist_ok=True)
     if (target / ".git").exists():
@@ -121,6 +159,9 @@ def materialize(corpus: Corpus, target: Path, *, task_ids: Sequence[str] | None 
             target / task["task_id"],
             dirs_exist_ok=True,
         )
+    (target / ".gitignore").write_text(
+        "\n".join(BUILD_ARTIFACT_IGNORES) + "\n", encoding="utf-8"
+    )
     gitcmd.run(target, "init", "--quiet")
     gitcmd.run(target, "config", "user.email", "benchmark.local")
     gitcmd.run(target, "config", "user.name", "benchmark")
@@ -283,11 +324,27 @@ DEFAULT_WORK_LENSES = (
 DEFAULT_REVIEW_LENSES = ("review/scope-integrity", "review/closed-contract")
 
 
-def plan_for(corpus: Corpus, cell: Cell, base_commit: str, plan_dir: Path) -> Path:
+DEFAULT_CELL_TOKEN_BUDGET = 20_000_000
+DEFAULT_CELL_SECONDS_BUDGET = 86_400
+
+
+def plan_for(
+    corpus: Corpus,
+    cell: Cell,
+    base_commit: str,
+    plan_dir: Path,
+    *,
+    budget_tokens: int = DEFAULT_CELL_TOKEN_BUDGET,
+    budget_seconds: int = DEFAULT_CELL_SECONDS_BUDGET,
+) -> Path:
     """Write the plan and contracts one matrix cell runs from.
 
     Generated into the work root rather than the corpus, because a corpus is
     an input and a run's inputs are not written back into it.
+
+    The budgets are per cell, not per matrix. A matrix of four cells can cost
+    four times what one cell's budget allows, which is why the caller sets
+    them deliberately for a live run instead of taking the defaults.
     """
     contracts = plan_dir / "contracts"
     contracts.mkdir(parents=True, exist_ok=True)
@@ -319,7 +376,10 @@ def plan_for(corpus: Corpus, cell: Cell, base_commit: str, plan_dir: Path) -> Pa
         "base": [{"repo_id": "corpus", "commit": base_commit}],
         "tasks": tasks,
         "concurrency": {"max_parallel_tasks": 1},
-        "budgets": {"tokens": 20_000_000, "wall_clock_seconds": 86_400},
+        "budgets": {
+            "tokens": int(budget_tokens),
+            "wall_clock_seconds": int(budget_seconds),
+        },
         "escalation": {
             "level_2_on_severity": "HIGH",
             "stop_on_severity": "CRITICAL",
@@ -331,6 +391,19 @@ def plan_for(corpus: Corpus, cell: Cell, base_commit: str, plan_dir: Path) -> Pa
     return path
 
 
+def unresolved_models(cells: Sequence[Cell]) -> list[str]:
+    """Cell models that are role names rather than models a provider serves.
+
+    The example matrix ships with `worker-class` in it deliberately: a matrix
+    is provider-unresolved like everything else here. Sending that to a
+    provider fails at the first call, so a live matrix says so first.
+    """
+    from workflows.flows.base import DEFAULT_BINDINGS
+
+    placeholders = {model for model, _ in DEFAULT_BINDINGS.values()}
+    return sorted({cell.model for cell in cells if cell.model in placeholders})
+
+
 def run_matrix(
     corpus: Corpus,
     cells: Sequence[Cell],
@@ -339,16 +412,33 @@ def run_matrix(
     dry_run: bool = True,
     registry: Any = None,
     runner_factory: Any = None,
+    profile: Any = None,
+    budget_tokens: int = DEFAULT_CELL_TOKEN_BUDGET,
+    budget_seconds: int = DEFAULT_CELL_SECONDS_BUDGET,
 ) -> dict[str, Any]:
     """Run every cell against the corpus and score each one.
 
     The corpus repository is materialized once and every cell starts from the
     same frozen commit, because a matrix whose cells see different inputs
     measures the inputs.
+
+    A cell binds *every* role to its model and effort, so a cell measures a
+    configuration and not a reviewer in isolation. An optional profile
+    supplies what a cell does not name — per-role sandboxes above all, since
+    a worker denied writes produces an empty candidate.
     """
     from workflows import program as program_module
     from workflows.flows.base import Profile
 
+    if not dry_run:
+        placeholders = unresolved_models(cells)
+        if placeholders:
+            raise BenchmarkError(
+                "this matrix names role placeholders, not models: "
+                + ", ".join(placeholders)
+                + ". A provider would reject them at the first call. Replace "
+                "them with the model ids your runner serves, or add --dry-run."
+            )
     registry = registry or default_registry()
     started_at = utc_now()
     repo = work_root / "repo"
@@ -359,12 +449,17 @@ def run_matrix(
     results: list[tuple[Cell, Score, dict[str, int], int]] = []
     for cell in cells:
         began = time.monotonic()
-        plan_path = plan_for(corpus, cell, base_commit, work_root / "plans" / cell.cell_id)
+        plan_path = plan_for(
+            corpus,
+            cell,
+            base_commit,
+            work_root / "plans" / cell.cell_id,
+            budget_tokens=budget_tokens,
+            budget_seconds=budget_seconds,
+        )
         resolved = program_module.resolve(plan_path, registry=registry, worktree=repo)
-        bindings = {
-            role: (cell.model, cell.effort)
-            for role in program_module.Profile().bindings
-        }
+        base = profile or Profile()
+        bindings = {role: (cell.model, cell.effort) for role in base.bindings}
         engine = program_module.Program(
             resolved,
             worktree=repo,
@@ -374,7 +469,11 @@ def run_matrix(
             registry=registry,
             runner_factory=runner_factory,
             max_parallel_workers=max(1, cell.worker_count),
-            profile=Profile(bindings=bindings),
+            profile=Profile(
+                bindings=bindings,
+                sandbox_for_role=dict(base.sandbox_for_role),
+                resolved=True,
+            ),
         )
         program_report = engine.execute()
         cell_score = score(corpus, findings_from_run(engine.run.root))
@@ -408,6 +507,13 @@ def report(
         "known set of defects, not every defect in the fixture.",
         "A corpus measures the classes it plants. A class absent from the "
         "corpus is unmeasured, not absent from the system.",
+        "Scored over "
+        + ", ".join(task["task_id"] for task in corpus.tasks)
+        + ". Tasks of this corpus not listed here did not run and are "
+        "unmeasured by this report.",
+        "A cell binds every role to one model and effort, so a cell scores a "
+        "whole configuration. It does not separate what the worker produced "
+        "from what the reviewers caught.",
     ]
     if dry_run:
         non_claims.insert(
@@ -493,6 +599,46 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--work-root", type=Path, required=True)
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--json", action="store_true")
+    run_parser.add_argument(
+        "--task",
+        action="append",
+        default=[],
+        metavar="TASK_ID",
+        help=(
+            "run only this task; repeatable. Start a live matrix with two, "
+            "not the whole corpus"
+        ),
+    )
+    run_parser.add_argument(
+        "--profile",
+        type=Path,
+        default=None,
+        help=(
+            "deployment profile supplying what a cell does not name, "
+            "per-role sandboxes above all. Cells bind the models"
+        ),
+    )
+    run_parser.add_argument(
+        "--dangerously-bypass-sandbox",
+        action="store_true",
+        help=(
+            "run producing roles without the provider's sandbox. Only where "
+            "the sandbox refuses writes a worker legitimately needs; the "
+            "scope and protected-hash gates remain the actual check"
+        ),
+    )
+    run_parser.add_argument(
+        "--budget-tokens",
+        type=int,
+        default=DEFAULT_CELL_TOKEN_BUDGET,
+        help="token budget per cell, not per matrix (default: %(default)s)",
+    )
+    run_parser.add_argument(
+        "--budget-seconds",
+        type=int,
+        default=DEFAULT_CELL_SECONDS_BUDGET,
+        help="wall-clock budget per cell, not per matrix (default: %(default)s)",
+    )
 
     args = parser.parse_args(argv)
     try:
@@ -503,12 +649,26 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_OK
 
         if args.command == "run":
+            from workflows.flows.base import Profile
+            from workflows.runners.codex import CodexRunner
+
             corpus = load_corpus(args.corpus)
+            if args.task:
+                corpus = corpus.subset(args.task)
+            bypass = bool(args.dangerously_bypass_sandbox)
             document = run_matrix(
                 corpus,
                 load_matrix(args.matrix),
                 work_root=args.work_root,
                 dry_run=bool(args.dry_run),
+                profile=Profile.from_toml(args.profile) if args.profile else None,
+                runner_factory=(
+                    None
+                    if args.dry_run
+                    else (lambda: CodexRunner(bypass_sandbox=bypass))
+                ),
+                budget_tokens=args.budget_tokens,
+                budget_seconds=args.budget_seconds,
             )
             path = args.work_root / "benchmark-report.json"
             path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
@@ -527,7 +687,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(document, indent=2) if args.json else summarize(document))
         return EXIT_OK if cell_score.detected == cell_score.planted else EXIT_FAILED
-    except (BenchmarkError, SchemaError, OSError, ValueError) as exc:
+    except (BenchmarkError, FlowError, SchemaError, OSError, ValueError) as exc:
         print(f"cannot run the benchmark: {exc}", file=sys.stderr)
         return EXIT_USAGE
 
