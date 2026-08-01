@@ -438,6 +438,27 @@ without making it impossible to fix. The other eleven planted defects were
 checked against the manifest's own `survives` entries; they describe
 incomplete tests, not tests that encode the defect.
 
+**D-M8-10 — Every planted defect carries an executable presence probe, and
+recall changed denominator.** The roadmap asks the benchmark for "reviewer
+recall". What it computed was matched-over-planted, which over an `implement`
+cell gives the same zero for a defect the worker *fixed* and a defect every
+reviewer *missed*. A live probe on 2026-08-01 produced the first case: the
+worker removed both planted defects correctly, and the cell read 0/2.
+
+A defect now declares `probe_path`, a script in the corpus — never in a seed
+tree, which would be an answer key in the worktree — run against the candidate
+after the flow. It prints `DEFECT_PRESENT` or `DEFECT_ABSENT` and exits zero;
+anything else is INDETERMINATE. Recall is `caught / present`. `removed` and
+`indeterminate` are reported separately and never folded into either side, and
+a cell with nothing present reports no recall rather than zero.
+
+Two of the twelve are heuristics, not decisions: the `instruction-set` defects
+live in prose, which has no executable oracle. Both carry a `probe_caveat` in
+the manifest saying where the verdict could be wrong.
+
+The old `detected` count is kept in the report because earlier reports
+recorded it, and its description says to read `caught` instead.
+
 **D-M8-4 — A benchmark cell is a program run, not a new orchestrator.** The
 roadmap says "reusing program infrastructure"; a cell writes a generated
 plan into the work root, resolves it against the materialized corpus

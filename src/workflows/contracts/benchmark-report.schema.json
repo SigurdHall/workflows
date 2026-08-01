@@ -53,12 +53,53 @@
       }
     },
     "score": {
+      "description": "Recall is caught over present, never caught over planted. A defect the producing step removed was never offered to a reviewer, and counting it as a miss measures the worker rather than the review.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["planted", "detected", "unmatched_findings", "by_class", "lens_yield"],
+      "required": [
+        "planted",
+        "present",
+        "removed",
+        "indeterminate",
+        "caught",
+        "missed",
+        "detected",
+        "unmatched_findings",
+        "by_class",
+        "lens_yield"
+      ],
       "properties": {
         "planted": { "type": "integer", "minimum": 0 },
-        "detected": { "type": "integer", "minimum": 0 },
+        "present": {
+          "description": "Planted defects a probe found still in the scored candidate. The only ones a reviewer could have caught, and so the only denominator recall may use.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed": {
+          "description": "Planted defects a probe found gone. The producing step fixed them; they are not reviewer misses.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "indeterminate": {
+          "description": "Planted defects whose presence no probe settled: none declared, or it did not answer. Reported, never folded into either side.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "caught": {
+          "description": "Present defects a finding pointed at. The numerator of recall.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "missed": {
+          "description": "Present defects no finding pointed at. The number this benchmark exists to drive down.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "detected": {
+          "description": "Planted defects a finding pointed at, whatever their presence state. Kept because it is what earlier reports recorded; read caught instead.",
+          "type": "integer",
+          "minimum": 0
+        },
         "unmatched_findings": {
           "description": "Findings that match no planted defect. Deliberately not called false positives: an unmatched finding may be a real defect the corpus author did not plant.",
           "type": "integer",
@@ -79,11 +120,26 @@
     "class_score": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["defect_class", "class_name", "planted", "detected"],
+      "required": [
+        "defect_class",
+        "class_name",
+        "planted",
+        "present",
+        "removed",
+        "indeterminate",
+        "caught",
+        "missed",
+        "detected"
+      ],
       "properties": {
         "defect_class": { "type": "integer", "minimum": 1, "maximum": 20 },
         "class_name": { "type": "string", "minLength": 3, "maxLength": 100 },
         "planted": { "type": "integer", "minimum": 0 },
+        "present": { "type": "integer", "minimum": 0 },
+        "removed": { "type": "integer", "minimum": 0 },
+        "indeterminate": { "type": "integer", "minimum": 0 },
+        "caught": { "type": "integer", "minimum": 0 },
+        "missed": { "type": "integer", "minimum": 0 },
         "detected": { "type": "integer", "minimum": 0 }
       }
     },

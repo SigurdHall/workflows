@@ -46,7 +46,7 @@ does not fit, it probably does not belong here.
 | Flow | `fanout` | N lens workers → one synthesis → gates → review → repair | Weak test oracle, large unknown defect surface |
 | Flow | `assure` | Review of an existing candidate, or of goal attainment (two modes) | Work produced outside a flow; goal checks |
 | Flow | `adjudicate` | Two conflicting verdicts → adjudication with evidence requirements | Reviewers disagree |
-| Flow | `benchmark` | Model × effort × worker-count matrix against a task corpus with planted defects | Calibrating every default in this repo |
+| Flow | `benchmark` | Model × effort × worker-count matrix against a task corpus with planted defects and presence probes | Calibrating every default in this repo |
 
 Note the two orthogonal kinds of parallelism: `fanout` is breadth of
 *perspectives* on one task; `program` is breadth of *tasks*. They compose
@@ -162,11 +162,12 @@ What that does and does not mean:
   prompts, gate results, run manifests and verdicts end to end, and resume
   without repeating a completed step. A dry run calls no model and never
   reports PASS.
-- **Live-tested once.** The Codex runner has made one real call, documented
-  with its telemetry in [runners/README.md](runners/README.md). No flow has
-  yet run against a live model, so nothing here is calibrated: the worker
-  counts, the ladder thresholds and the lens set are asserted, and the
-  benchmark flow exists to replace those assertions with measurements.
+- **Live-tested.** An `implement` flow has run end to end against a live
+  model, both standalone and through a benchmark cell over a corpus task.
+  Both are recorded with their telemetry in
+  [docs/evidence/](docs/evidence/), along with the defects those runs
+  exposed. Nothing is calibrated yet: the worker counts, the ladder
+  thresholds and the lens set are still asserted, and no matrix has run.
 - **Declared but not implemented.** Ladder level 4 needs a second runner
   family. Until one exists it never runs, and every verdict says so in its
   non-claims rather than skipping it silently.

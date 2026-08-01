@@ -104,7 +104,7 @@ exercised against a live model before, and it held.
 provider-side spend is absent from the 335 430. Probe 3's numbers are a floor,
 not a per-cell estimate.
 
-## The flaw this exposes
+## The flaw this exposed, and the fix
 
 The scorer counts a planted defect as detected when a reviewer's finding
 points at its file. Over an `implement` flow that conflates two opposite
@@ -117,17 +117,33 @@ Only the second is a reviewer failure, and the number cannot tell them apart.
 Per-class recall from an `implement` cell is therefore not reviewer recall,
 which is what `docs/roadmap.md` asks the benchmark for.
 
-The report now carries this in its own non-claims, which is honesty, not a
-fix. A fix needs ground truth on whether the defect is still present in the
-scored candidate. The cheapest form is an executable probe per planted
-defect — a small test that fails if and only if the defect is there — turning
-the corpus's prose `triggering_probe` field into something the scorer can
-run. Then a cell reports three numbers instead of one: defects removed by the
-worker, defects surviving and caught, defects surviving and missed. Only the
-last two belong in recall.
+### Fixed, and checked against this same run
 
-That is a corpus and scorer change, not a wiring change, and it is the
-decision this probe hands back rather than making on its own.
+Each of the twelve planted defects now carries an executable **presence
+probe** in the corpus, and recall changed denominator: `caught / present`,
+with `removed` and `indeterminate` reported beside it rather than folded in.
+
+Re-scoring this run proves it on the data that exposed the flaw. Same
+findings, same corpus, same verdict files:
+
+```
+before   recall 0/2   (class 11 escaped, class 14 escaped)
+after    recall n/a   (present 0, removed 2, indeterminate 0 of 2 planted)
+```
+
+The second reading is the true one: the worker removed both defects, and
+nothing was left for a reviewer to catch.
+
+The probes are verified offline for discrimination, which matters more than
+that they fire. Each is run three ways — against the seed, against a variant
+fixing its own defect, and against a variant fixing only the *other* defect of
+its task. A probe that always answered PRESENT would pass the first and fail
+the third. All twelve pass all three; the two `measure-variance` probes were
+additionally checked against the real worker candidate above.
+
+Two of the twelve are heuristics rather than decisions. The `instruction-set`
+defects live in prose, which has no executable oracle, and both carry a
+`probe_caveat` in the manifest naming where the verdict could be wrong.
 
 ## What these probes do not establish
 

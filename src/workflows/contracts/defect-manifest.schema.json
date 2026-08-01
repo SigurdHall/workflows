@@ -85,6 +85,16 @@
           "maxLength": 2000
         },
         "description": { "type": "string", "minLength": 10, "maxLength": 2000 },
+        "probe_path": {
+          "description": "A script, relative to the corpus root, that decides whether this defect is still present in a candidate. Run as `<interpreter> <probe_path> <task directory inside the candidate>`; it must print exactly one line, DEFECT_PRESENT or DEFECT_ABSENT, and exit zero. Anything else is INDETERMINATE and is reported as such, never folded into a recall figure. Without one, a defect the worker fixed and a defect every reviewer missed both score zero and cannot be told apart.",
+          "$ref": "core.defs.schema.json#/$defs/relative_path"
+        },
+        "probe_caveat": {
+          "description": "Where the probe's verdict is a heuristic rather than a decision. Prose defects have no executable oracle; saying so beside the probe is what keeps the number honest.",
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 600
+        },
         "survives": {
           "description": "What this defect is known to survive, which is why it is worth planting.",
           "type": "array",

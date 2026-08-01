@@ -201,25 +201,157 @@ def matches(finding: dict[str, Any], defect: dict[str, Any]) -> bool:
     return found == planted or found.endswith("/" + planted) or planted.endswith("/" + found)
 
 
+PRESENT = "PRESENT"
+ABSENT = "ABSENT"
+INDETERMINATE = "INDETERMINATE"
+
+PROBE_TIMEOUT_SECONDS = 60
+_PROBE_VERDICTS = {"DEFECT_PRESENT": PRESENT, "DEFECT_ABSENT": ABSENT}
+
+_COUNTERS = ("planted", "present", "removed", "indeterminate", "caught", "missed", "detected")
+
+
+def run_probe(
+    probe: Path, task_directory: Path, *, interpreter: str | None = None
+) -> tuple[str, str]:
+    """Ask a probe whether its defect is still in this candidate.
+
+    The contract is deliberately narrow: print one of `DEFECT_PRESENT` or
+    `DEFECT_ABSENT` and exit zero. A probe that crashes, times out, says
+    nothing, or says both answers has not decided, and a benchmark that reads
+    silence as either answer is worse than one that admits it does not know.
+
+    Returns the verdict and a one-line reason, because an INDETERMINATE with
+    no reason cannot be acted on.
+    """
+    import subprocess
+
+    interpreter = interpreter or sys.executable
+    if not probe.is_file():
+        return INDETERMINATE, f"no probe at {probe}"
+    try:
+        completed = subprocess.run(
+            [interpreter, str(probe), str(task_directory)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=PROBE_TIMEOUT_SECONDS,
+        )
+    except OSError as exc:
+        return INDETERMINATE, f"could not run the probe: {exc}"
+    except subprocess.TimeoutExpired:
+        return INDETERMINATE, f"the probe exceeded {PROBE_TIMEOUT_SECONDS}s"
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
+        return INDETERMINATE, (
+            f"the probe exited {completed.returncode}: {detail[-1] if detail else ''}"
+        )
+    spoken = [
+        _PROBE_VERDICTS[line.strip()]
+        for line in completed.stdout.splitlines()
+        if line.strip() in _PROBE_VERDICTS
+    ]
+    if len(spoken) != 1:
+        return INDETERMINATE, (
+            "the probe printed no verdict"
+            if not spoken
+            else f"the probe printed {len(spoken)} verdicts"
+        )
+    return spoken[0], "the probe answered"
+
+
+def presence_for_task(
+    corpus: Corpus,
+    task: dict[str, Any],
+    candidate_root: Path,
+    *,
+    interpreter: str | None = None,
+) -> dict[str, tuple[str, str]]:
+    """Run every probe of one task against the candidate it produced.
+
+    ``candidate_root`` is the repository root of the candidate — the task's own
+    directory inside it is what a probe is handed, matching the layout
+    :func:`materialize` builds.
+    """
+    results: dict[str, tuple[str, str]] = {}
+    for defect in task["defects"]:
+        relative = defect.get("probe_path")
+        if not relative:
+            results[defect["defect_id"]] = (
+                INDETERMINATE,
+                "the corpus declares no probe for this defect",
+            )
+            continue
+        results[defect["defect_id"]] = run_probe(
+            corpus.root / relative,
+            candidate_root / task["task_id"],
+            interpreter=interpreter,
+        )
+    return results
+
+
+def presence_from_run(
+    corpus: Corpus, run_root: Path, *, interpreter: str | None = None
+) -> dict[str, dict[str, tuple[str, str]]]:
+    """Probe every task's candidate under a program run directory.
+
+    The candidate a cell produced is its task worktree. A task with no
+    worktree — never started, or a run whose directory has been cleaned —
+    settles as INDETERMINATE with the reason attached, because an unprobed
+    candidate is not evidence that its defects survived.
+    """
+    results: dict[str, dict[str, tuple[str, str]]] = {}
+    for task in corpus.tasks:
+        candidate = run_root / "worktrees" / task["task_id"]
+        if candidate.is_dir():
+            results[task["task_id"]] = presence_for_task(
+                corpus, task, candidate, interpreter=interpreter
+            )
+        else:
+            results[task["task_id"]] = {
+                defect["defect_id"]: (
+                    INDETERMINATE,
+                    f"no candidate worktree at {candidate}",
+                )
+                for defect in task["defects"]
+            }
+    return results
+
+
 @dataclass
 class Score:
     planted: int = 0
+    present: int = 0
+    removed: int = 0
+    indeterminate: int = 0
+    caught: int = 0
+    missed: int = 0
     detected: int = 0
     unmatched_findings: int = 0
     by_class: dict[int, dict[str, Any]] = field(default_factory=dict)
     lens_yield: dict[str, dict[str, int]] = field(default_factory=dict)
 
+    @property
+    def recall(self) -> float | None:
+        """Caught over present. ``None`` when nothing was present to catch."""
+        return self.caught / self.present if self.present else None
+
     def to_document(self) -> dict[str, Any]:
         return {
             "planted": self.planted,
+            "present": self.present,
+            "removed": self.removed,
+            "indeterminate": self.indeterminate,
+            "caught": self.caught,
+            "missed": self.missed,
             "detected": self.detected,
             "unmatched_findings": self.unmatched_findings,
             "by_class": [
                 {
                     "defect_class": defect_class,
                     "class_name": entry["class_name"],
-                    "planted": entry["planted"],
-                    "detected": entry["detected"],
+                    **{name: entry[name] for name in _COUNTERS},
                 }
                 for defect_class, entry in sorted(self.by_class.items())
             ],
@@ -231,24 +363,33 @@ class Score:
 
 
 def score(
-    corpus: Corpus, findings_by_task: dict[str, Iterable[dict[str, Any]]]
+    corpus: Corpus,
+    findings_by_task: dict[str, Iterable[dict[str, Any]]],
+    presence_by_task: dict[str, dict[str, tuple[str, str]]] | None = None,
 ) -> Score:
     """Reviewer recall per defect class, plus lens yield.
 
     A defect counts as detected when at least one finding points at it. A
     finding counts once per defect it matches; a finding that matches none is
     unmatched, which is not the same as wrong.
+
+    ``presence_by_task`` is what separates a review failure from a review
+    success. Without it every defect is INDETERMINATE and `present` is zero,
+    so recall is undefined rather than misleadingly zero — which is the honest
+    reading of a run whose candidate was never probed.
     """
+    presence_by_task = presence_by_task or {}
     result = Score()
     for task in corpus.tasks:
         findings = list(findings_by_task.get(task["task_id"], []))
+        presence = presence_by_task.get(task["task_id"], {})
         matched_findings: set[int] = set()
 
         for defect in task["defects"]:
             result.planted += 1
             entry = result.by_class.setdefault(
                 defect["defect_class"],
-                {"class_name": defect["class_name"], "planted": 0, "detected": 0},
+                {"class_name": defect["class_name"], **{name: 0 for name in _COUNTERS}},
             )
             entry["planted"] += 1
             hits = [
@@ -258,6 +399,23 @@ def score(
                 result.detected += 1
                 entry["detected"] += 1
                 matched_findings.update(hits)
+
+            state = presence.get(defect["defect_id"], (INDETERMINATE, ""))[0]
+            if state == ABSENT:
+                result.removed += 1
+                entry["removed"] += 1
+            elif state == PRESENT:
+                result.present += 1
+                entry["present"] += 1
+                if hits:
+                    result.caught += 1
+                    entry["caught"] += 1
+                else:
+                    result.missed += 1
+                    entry["missed"] += 1
+            else:
+                result.indeterminate += 1
+                entry["indeterminate"] += 1
 
         for index, finding in enumerate(findings):
             lens_id = finding.get("lens_id") or "unattributed"
@@ -476,7 +634,13 @@ def run_matrix(
             ),
         )
         program_report = engine.execute()
-        cell_score = score(corpus, findings_from_run(engine.run.root))
+        # A dry run judged nothing, so probing its untouched worktrees would
+        # report every defect present and every one missed. Leaving them
+        # INDETERMINATE is the honest reading of a run with no reviewer in it.
+        presence = (
+            {} if dry_run else presence_from_run(corpus, engine.run.root)
+        )
+        cell_score = score(corpus, findings_from_run(engine.run.root), presence)
         results.append(
             (
                 cell,
@@ -512,8 +676,16 @@ def report(
         + ". Tasks of this corpus not listed here did not run and are "
         "unmeasured by this report.",
         "A cell binds every role to one model and effort, so a cell scores a "
-        "whole configuration. It does not separate what the worker produced "
-        "from what the reviewers caught.",
+        "whole configuration. It does not separate which model produced the "
+        "candidate from which model reviewed it.",
+        "Recall is caught over present, not caught over planted. A defect the "
+        "producing step removed was never offered to a reviewer; an "
+        "INDETERMINATE one was never settled either way. Neither belongs in a "
+        "recall figure, and both are reported separately rather than folded "
+        "into one.",
+        "A presence probe decides whether the defect is there, not whether "
+        "the candidate is good. A candidate that removed a planted defect and "
+        "introduced a worse one probes ABSENT.",
     ]
     if dry_run:
         non_claims.insert(
@@ -553,20 +725,27 @@ def report(
 def summarize(document: dict[str, Any]) -> str:
     lines = [f"benchmark {document['corpus_id']}"]
     for cell in document["cells"]:
-        score_document = cell["score"]
-        planted, detected = score_document["planted"], score_document["detected"]
-        rate = f"{detected}/{planted}" if planted else "0/0"
+        s = cell["score"]
+        rate = f"{s['caught']}/{s['present']}" if s["present"] else "n/a"
         tokens = cell["telemetry"]
         lines.append(
             f"  {cell['cell_id']:<28} recall {rate:<8} "
-            f"tokens {tokens['new_input']}+{tokens['output']:<8} "
+            f"(present {s['present']}, removed {s['removed']}, "
+            f"indeterminate {s['indeterminate']} of {s['planted']} planted)  "
+            f"tokens {tokens['new_input']}+{tokens['output']} "
             f"{cell['duration_ms']} ms"
         )
-        for entry in score_document["by_class"]:
-            if entry["detected"] < entry["planted"]:
+        for entry in s["by_class"]:
+            if entry["missed"]:
                 lines.append(
-                    f"      class {entry['defect_class']:>2} {entry['class_name']:<28} "
-                    f"{entry['detected']}/{entry['planted']}"
+                    f"      MISSED  class {entry['defect_class']:>2} "
+                    f"{entry['class_name']:<28} {entry['missed']}/{entry['present']}"
+                )
+        for entry in s["by_class"]:
+            if entry["indeterminate"]:
+                lines.append(
+                    f"      unsettled class {entry['defect_class']:>2} "
+                    f"{entry['class_name']:<24} {entry['indeterminate']}/{entry['planted']}"
                 )
     for claim in document["non_claims"]:
         lines.append(f"  not claimed: {claim}")
@@ -588,6 +767,30 @@ def main(argv: list[str] | None = None) -> int:
     score_parser.add_argument("corpus", type=Path)
     score_parser.add_argument("run_root", type=Path)
     score_parser.add_argument("--json", action="store_true")
+    score_parser.add_argument(
+        "--candidate-root",
+        type=Path,
+        default=None,
+        help=(
+            "where the scored candidates live, if not the run root. Probes "
+            "look for <root>/worktrees/<task_id>"
+        ),
+    )
+    score_parser.add_argument(
+        "--task",
+        action="append",
+        default=[],
+        metavar="TASK_ID",
+        help="score only this task; repeatable. Tasks that never ran are noise",
+    )
+    score_parser.add_argument(
+        "--no-probes",
+        action="store_true",
+        help=(
+            "skip presence probes. Every defect then settles INDETERMINATE "
+            "and recall is undefined rather than misleadingly zero"
+        ),
+    )
 
     build_parser = sub.add_parser("build", help="materialize the corpus repository")
     build_parser.add_argument("corpus", type=Path)
@@ -677,8 +880,15 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_OK
 
         corpus = load_corpus(args.corpus)
+        if args.task:
+            corpus = corpus.subset(args.task)
         started = utc_now()
-        cell_score = score(corpus, findings_from_run(args.run_root))
+        candidates = args.candidate_root or args.run_root
+        cell_score = score(
+            corpus,
+            findings_from_run(args.run_root),
+            {} if args.no_probes else presence_from_run(corpus, candidates),
+        )
         document = report(
             corpus,
             [(Cell("recorded", "recorded", 1), cell_score, {"new_input": 0, "cached_input": 0, "output": 0}, 0)],
@@ -686,7 +896,8 @@ def main(argv: list[str] | None = None) -> int:
             started_at=started,
         )
         print(json.dumps(document, indent=2) if args.json else summarize(document))
-        return EXIT_OK if cell_score.detected == cell_score.planted else EXIT_FAILED
+        # A miss is a reviewer failure. An unsettled defect is not a pass.
+        return EXIT_OK if not (cell_score.missed or cell_score.indeterminate) else EXIT_FAILED
     except (BenchmarkError, FlowError, SchemaError, OSError, ValueError) as exc:
         print(f"cannot run the benchmark: {exc}", file=sys.stderr)
         return EXIT_USAGE

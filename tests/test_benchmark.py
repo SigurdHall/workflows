@@ -301,18 +301,55 @@ class ReportTest(CorpusTestCase):
         )
         self.assertTrue(document["non_claims"][0].startswith("Dry run"))
 
-    def test_the_summary_names_the_classes_that_escaped(self) -> None:
+    def test_the_summary_names_the_classes_a_reviewer_missed(self) -> None:
         corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        present = {
+            "measure-variance": {
+                "D-1": (benchmark.PRESENT, "probed"),
+                "D-2": (benchmark.PRESENT, "probed"),
+            },
+            "triage-router": {"D-3": (benchmark.PRESENT, "probed")},
+        }
         document = benchmark.report(
             corpus,
-            [(benchmark.Cell("m", "low", 1), benchmark.score(corpus, {}), {"new_input": 0, "cached_input": 0, "output": 0}, 0)],
+            [
+                (
+                    benchmark.Cell("m", "low", 1),
+                    benchmark.score(corpus, {}, present),
+                    {"new_input": 0, "cached_input": 0, "output": 0},
+                    0,
+                )
+            ],
             dry_run=False,
             started_at="2026-07-31T15:00:00Z",
             registry=self.registry,
         )
         text = benchmark.summarize(document)
+        self.assertIn("MISSED", text)
         self.assertIn("Aggregation misuse", text)
-        self.assertIn("0/1", text)
+        self.assertIn("recall 0/3", text)
+
+    def test_a_summary_with_nothing_present_says_so_rather_than_zero(self) -> None:
+        """Recall over an empty denominator is undefined, not failure."""
+        corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        document = benchmark.report(
+            corpus,
+            [
+                (
+                    benchmark.Cell("m", "low", 1),
+                    benchmark.score(corpus, {}),
+                    {"new_input": 0, "cached_input": 0, "output": 0},
+                    0,
+                )
+            ],
+            dry_run=False,
+            started_at="2026-07-31T15:00:00Z",
+            registry=self.registry,
+        )
+        text = benchmark.summarize(document)
+        self.assertIn("recall n/a", text)
+        self.assertIn("indeterminate 3", text)
+        self.assertNotIn("MISSED", text)
 
 
 class MatrixTest(CorpusTestCase):
@@ -482,6 +519,99 @@ class SubsetTest(CorpusTestCase):
         self.assertNotIn("measure-variance", claim[0])
 
 
+class PresenceScoringTest(CorpusTestCase):
+    """Recall is caught over present. The other states are reported, not folded."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.corpus = benchmark.load_corpus(self.build_corpus(), registry=self.registry)
+        self.hit = {
+            "measure-variance": [finding("F-1", "measure-variance/src/variance.py")]
+        }
+
+    def presence(self, **states: str) -> dict[str, dict[str, tuple[str, str]]]:
+        by_task = {"D-1": "measure-variance", "D-2": "measure-variance", "D-3": "triage-router"}
+        result: dict[str, dict[str, tuple[str, str]]] = {}
+        for keyword, state in states.items():
+            defect_id = keyword.replace("_", "-")
+            result.setdefault(by_task[defect_id], {})[defect_id] = (state, "test")
+        return result
+
+    def test_a_defect_the_worker_removed_is_not_a_reviewer_miss(self) -> None:
+        result = benchmark.score(
+            self.corpus,
+            {},
+            self.presence(D_1=benchmark.ABSENT, D_2=benchmark.ABSENT, D_3=benchmark.ABSENT),
+        )
+        self.assertEqual(result.removed, 3)
+        self.assertEqual(result.present, 0)
+        self.assertEqual(result.missed, 0)
+        self.assertIsNone(result.recall, "no denominator, no recall")
+
+    def test_a_present_defect_nobody_flagged_is_a_miss(self) -> None:
+        result = benchmark.score(
+            self.corpus,
+            {},
+            self.presence(D_1=benchmark.PRESENT, D_2=benchmark.PRESENT, D_3=benchmark.PRESENT),
+        )
+        self.assertEqual((result.present, result.missed, result.caught), (3, 3, 0))
+        self.assertEqual(result.recall, 0.0)
+
+    def test_a_present_defect_a_finding_points_at_is_caught(self) -> None:
+        result = benchmark.score(
+            self.corpus,
+            self.hit,
+            self.presence(D_1=benchmark.PRESENT, D_2=benchmark.PRESENT, D_3=benchmark.ABSENT),
+        )
+        # One finding, one file, two defects planted in it.
+        self.assertEqual((result.present, result.caught, result.missed), (2, 2, 0))
+        self.assertEqual(result.removed, 1)
+        self.assertEqual(result.recall, 1.0)
+
+    def test_the_same_run_scores_differently_once_presence_is_known(self) -> None:
+        """The defect this whole change exists for.
+
+        Identical findings, identical corpus. Without presence the cell reads
+        as a total reviewer failure; with it, the reviewers caught everything
+        that was there and the worker removed the rest.
+        """
+        blind = benchmark.score(self.corpus, self.hit)
+        informed = benchmark.score(
+            self.corpus,
+            self.hit,
+            self.presence(D_1=benchmark.PRESENT, D_2=benchmark.PRESENT, D_3=benchmark.ABSENT),
+        )
+        self.assertIsNone(blind.recall)
+        self.assertEqual(informed.recall, 1.0)
+
+    def test_an_unsettled_defect_lands_in_neither_column(self) -> None:
+        result = benchmark.score(
+            self.corpus,
+            {},
+            self.presence(D_1=benchmark.PRESENT, D_2=benchmark.INDETERMINATE),
+        )
+        self.assertEqual(result.planted, 3)
+        self.assertEqual(result.present, 1)
+        self.assertEqual(result.indeterminate, 2, "D-2 said so, D-3 was never probed")
+        self.assertEqual(
+            result.present + result.removed + result.indeterminate, result.planted
+        )
+
+    def test_every_class_row_accounts_for_every_defect_it_planted(self) -> None:
+        result = benchmark.score(
+            self.corpus,
+            self.hit,
+            self.presence(D_1=benchmark.PRESENT, D_2=benchmark.ABSENT),
+        )
+        for entry in result.to_document()["by_class"]:
+            self.assertEqual(
+                entry["present"] + entry["removed"] + entry["indeterminate"],
+                entry["planted"],
+                entry["class_name"],
+            )
+            self.assertEqual(entry["caught"] + entry["missed"], entry["present"])
+
+
 class PlaceholderModelTest(CorpusTestCase):
     """A matrix names models. The example matrix names roles, deliberately."""
 
@@ -541,7 +671,7 @@ class CliTest(CorpusTestCase):
         self.assertEqual(code, benchmark.EXIT_OK, err)
         self.assertIn("toy-corpus: 2 task(s)", out)
 
-    def test_score_reads_a_program_run_directory(self) -> None:
+    def recorded_run(self) -> tuple[Path, Path]:
         path = self.build_corpus()
         run_root = self.root / "run"
         directory = run_root / "tasks" / "triage-router"
@@ -550,10 +680,32 @@ class CliTest(CorpusTestCase):
             json.dumps({"findings": [finding("F", "triage-router/src/router.py:12")]}),
             encoding="utf-8",
         )
-        code, out, err = self.run_cli("score", str(path), str(run_root))
-        self.assertEqual(code, benchmark.EXIT_FAILED, "two defects were missed")
-        self.assertIn("1/3", out)
-        self.assertIn("Aggregation misuse", out, "the escaped classes are named")
+        return path, run_root
+
+    def test_score_reads_a_program_run_directory(self) -> None:
+        path, run_root = self.recorded_run()
+        code, out, err = self.run_cli("score", str(path), str(run_root), "--no-probes")
+        self.assertEqual(code, benchmark.EXIT_FAILED, "nothing was settled", )
+        self.assertIn("recall n/a", out)
+        self.assertIn("indeterminate 3 of 3 planted", out)
+        self.assertIn("Aggregation misuse", out, "the unsettled classes are named")
+
+    def test_an_unprobed_run_never_reports_recall(self) -> None:
+        """A run whose candidates are gone cannot be scored for recall.
+
+        The finding is still counted as detected, but with no probe to say the
+        defect was there, it enters no recall figure.
+        """
+        path, run_root = self.recorded_run()
+        code, out, _ = self.run_cli("score", str(path), str(run_root), "--json")
+        self.assertEqual(code, benchmark.EXIT_FAILED)
+        document = json.loads(out)
+        score_document = document["cells"][0]["score"]
+        self.assertEqual(score_document["indeterminate"], 3)
+        self.assertEqual(score_document["present"], 0)
+        self.assertEqual(score_document["caught"], 0)
+        self.assertEqual(score_document["missed"], 0)
+        self.assertEqual(score_document["detected"], 1, "the finding was still read")
 
     def test_an_unreadable_corpus_is_a_usage_error(self) -> None:
         code, _, err = self.run_cli("score", str(self.root / "absent.json"), str(self.root))

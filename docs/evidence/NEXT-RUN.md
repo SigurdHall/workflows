@@ -20,20 +20,22 @@ point, not a plan to be re-derived.
 - A live matrix refuses cells whose model is a role placeholder, before it
   materializes anything.
 
-## Read this before spending anything
+## What the numbers mean now
 
-**A cell's per-class recall is not reviewer recall.** Over an `implement`
-flow, a planted defect the worker *fixed* and a planted defect every reviewer
-*missed* both score zero, and the number cannot tell them apart. A live probe
-demonstrated the first case: the worker removed both planted defects in one
-pass, correctly, and the cell scored 0/2.
+Each of the 12 planted defects carries a presence probe, so a cell reports
+`present`, `removed` and `indeterminate` rather than one recall figure that
+could mean either. **Recall is caught over present.** A defect the worker
+fixed is `removed` and enters no recall figure; a defect no probe settled is
+`indeterminate` and enters neither side.
 
-So a matrix run today answers question 3 below (cost against fan-out width)
-and gives an honest reading of *nothing else*. Questions 1 and 2 need the
-scorer to know whether the defect was still present in the candidate it
-scored. See the probe record for the shape of that fix — an executable probe
-per planted defect — and treat it as the decision to make before, not after,
-paying for a grid.
+This was not cosmetic. Re-scoring the 2026-08-01 probe run — same findings,
+same corpus — turns `recall 0/2`, which read as total reviewer failure, into
+`present 0, removed 2`: the worker fixed both, and nothing was left to catch.
+
+Two probes are heuristics rather than decisions, both on the prose task
+(`instruction-set`, classes 18 and 20). Prose has no executable oracle. Each
+carries a `probe_caveat` in the manifest naming exactly where its verdict
+could be wrong; read those before quoting a number from that task.
 
 ## Run it
 
@@ -71,9 +73,10 @@ and a single runaway task is not interrupted by them.
 
 Write `benchmark-<date>-tier-a.md` beside the JSON report, and answer:
 
-1. **Per-class recall.** Which of the planted classes escaped every
-   reviewer? Read it only for defects that were still present — see the
-   caveat above.
+1. **Per-class misses.** Which classes were *present* in the candidate and
+   still escaped every reviewer? Those are the classes the lens set does not
+   cover, and the evidence-driven trigger for authoring a new lens (ADR
+   0002). Read `missed`, not `planted - detected`.
 2. **Lens yield.** Which lens ids produced matched findings, and which
    produced none across every cell? A lens that never yields is a candidate
    for merging or retirement — telemetry decides, not intuition.

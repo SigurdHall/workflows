@@ -48,6 +48,27 @@ set of defects, not every defect in the fixture, and calling an unmatched
 finding wrong would train the system to reward reviewers that find only what
 is expected.
 
+**Recall is caught over present, never caught over planted.** A cell runs a
+producing step, and a worker that fixes a planted defect leaves nothing for a
+reviewer to catch. Counting that as a miss would measure the worker and call
+it review. So every planted defect carries a **presence probe** — a script in
+the corpus, never in a seed tree, run against the candidate after the flow:
+
+```
+<interpreter> <probe_path> <task directory inside the candidate>
+# prints exactly one of DEFECT_PRESENT / DEFECT_ABSENT, exits zero
+```
+
+A probe that crashes, times out, says nothing, or says both has not decided.
+That is INDETERMINATE, and it is reported beside the other counts rather than
+folded into either. Every cell therefore accounts for each planted defect
+exactly once as `present + removed + indeterminate`, and each present one as
+`caught + missed`. `missed` is the number this flow exists to drive down.
+
+A probe answers whether the defect is there, not whether the candidate is
+good: a candidate that removed the planted defect and introduced a worse one
+probes ABSENT, and the report says so in its non-claims.
+
 Fan-out gives each worker its own worktree from the frozen base, so workers
 never share a write target and none of them can see what another did. The
 synthesizer sees their candidates labelled by lens — a diff is a fact, an
