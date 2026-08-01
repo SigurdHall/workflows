@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tournament-report.schema.json",
+  "title": "Tournament report",
+  "description": "One king-of-the-hill pass over a candidate set: the champion, every duel, and the digest of the rubric that decided it. The digest is provenance — a champion that cannot say which rubric crowned it is a preference with no meaning.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "rubric_digest", "dry_run", "judges", "candidates", "champion", "duels", "non_claims"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.tournament-report.v1" },
+    "rubric_digest": { "$ref": "core.defs.schema.json#/$defs/digest" },
+    "dry_run": { "type": "boolean" },
+    "judges": {
+      "description": "Judges consulted per duel. Zero on a dry run, which consulted nobody.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 25
+    },
+    "candidates": {
+      "description": "Every entrant, in input order. Order matters exactly when candidates are indistinguishable: a tie keeps the incumbent.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": { "$ref": "core.defs.schema.json#/$defs/identifier" }
+    },
+    "champion": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+    "duels": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/duel" }
+    },
+    "non_claims": { "$ref": "core.defs.schema.json#/$defs/non_claims" }
+  },
+  "$defs": {
+    "duel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["incumbent", "challenger", "outcome", "verdict_files"],
+      "properties": {
+        "incumbent": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "challenger": { "$ref": "core.defs.schema.json#/$defs/identifier" },
+        "outcome": {
+          "description": "challenger only on a unanimous panel. A split panel is no_difference, and the incumbent stands.",
+          "type": "string",
+          "enum": ["incumbent", "challenger", "no_difference"]
+        },
+        "verdict_files": {
+          "description": "One recorded verdict per judge, relative to the report.",
+          "type": "array",
+          "maxItems": 25,
+          "items": { "type": "string", "minLength": 1, "maxLength": 400 }
+        }
+      }
+    }
+  }
+}

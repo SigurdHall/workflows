@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "duel-verdict.schema.json",
+  "title": "Duel verdict",
+  "description": "One judge, one blind pairwise comparison. The judge sees a rubric and two candidates and nothing else — no lineage, no authorship, no incumbency. 'none' is a verdict, not a failure: it is what keeps a split panel from being read as a decision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "winner", "pointed", "reasons", "non_claims"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.duel-verdict.v1" },
+    "winner": {
+      "description": "Which candidate the rubric prefers, or none when nothing separates them.",
+      "type": "string",
+      "enum": ["one", "two", "none"]
+    },
+    "separating_criterion": {
+      "description": "The first rubric criterion that separated the candidates. Absent when nothing did.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "pointed": {
+      "description": "Concrete places in the candidates that decided it. A preference that points at nothing is taste, not judgment, and is rejected by the caller.",
+      "type": "array",
+      "maxItems": 40,
+      "items": { "$ref": "#/$defs/pointer" }
+    },
+    "reasons": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "non_claims": { "$ref": "core.defs.schema.json#/$defs/non_claims" }
+  },
+  "$defs": {
+    "pointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate", "where", "why"],
+      "properties": {
+        "candidate": { "type": "string", "enum": ["one", "two"] },
+        "where": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "why": { "type": "string", "minLength": 1, "maxLength": 600 }
+      }
+    }
+  }
+}

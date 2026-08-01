@@ -10,6 +10,7 @@ module per flow; this page is the catalog.
 | `assure` | Review-only: candidate mode, and goal mode | implemented |
 | `adjudicate` | Resolve two conflicting envelopes with evidence | implemented |
 | `benchmark` | Matrix runs against a planted-defect corpus | implemented |
+| `evolve` | Blind tournaments over candidate lineages; overrides induce rubric rules | M9.1: tournament + inducer |
 
 ```
 python -m workflows.flow implement --contract c.json --worktree . --dry-run

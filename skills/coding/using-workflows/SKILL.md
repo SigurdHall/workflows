@@ -52,6 +52,7 @@ changing anything here.
 | "Did we achieve this?" with no deterministic oracle | `assure` (goal contract) |
 | Two envelopes that reached different conclusions | `adjudicate` |
 | Measuring reviewer recall or lens yield | `benchmark` |
+| Ranking alternatives with no oracle, or turning an override into a rubric rule | `evolve` (M9.1: tournament + inducer) |
 | More than one task | `program` over a plan |
 
 `fanout` is breadth of *perspectives* on one task; `program` is breadth of
@@ -84,7 +85,18 @@ python -m workflows.program run plan.toml                 # resolve and print
 python -m workflows.program run plan.toml --approve --profile profile.toml
 python -m workflows.program resume <run-id>
 python -m workflows.benchmark run <corpus.json> --matrix m.toml --work-root <dir>
+python -m workflows.evolve tournament a.md b.md c.md --rubric rubrikk.md \
+    --out <dir> --profile profile.toml         # blind pairwise, judge role
+python -m workflows.evolve induce --rubric rubrikk.md --chosen b.md --over a.md \
+    --out amendment.json --profile profile.toml # override -> proposed rule
 ```
+
+For `evolve`: the rubric is a markdown precedence list owned by the product,
+never by this repository. A split panel is a tie and the incumbent stands, so
+input order matters when candidates are indistinguishable. `induce` has no
+dry mode by design — a stub rule looks exactly like a proposal, and a
+proposal the owner might ratify must never be a stub. Nothing enters the
+rubric until the owner edits the rubric file themselves.
 
 Exit codes are check-style everywhere: 0 clean, 1 violations or a failed
 verdict, 2 usage or configuration error.

@@ -162,3 +162,24 @@ hand-computed answer key.
 - Lens library growth driven by benchmark lens-yield data.
 
 Deviations from this roadmap are logged in [deviations.md](deviations.md).
+
+## Post-v0 — M9: evolve
+
+Search under judgment for deliverables with no oracle. Design in
+ADR 0009; the flow ships in stages because a selection step that cannot be
+trusted makes everything above it noise with confidence.
+
+- **M9.1 — Tournament and rule inducer.** Blind pairwise duels against a
+  ratified rubric; side-swapped panels; unanimity decides and a split panel
+  keeps the incumbent; king-of-the-hill ranking; a human override is turned
+  into a proposed rubric amendment, never applied. Acceptance: a dry run
+  produces a schema-valid report with no model call; stubbed panels prove
+  blindness, side-swap correction, and that 2-1 is a tie.
+- **M9.2 — The loop.** Lens lineages plus fresh starts plus a reframe per
+  round; keep-or-discard per lineage; grafts that must win their own blind
+  duel; a director turning critique into the next round's lens set; archive
+  of best-per-lineage; stop after two rounds without a new champion.
+- **M9.3 — First live run on a real deliverable**, with a ratified rubric
+  owned outside this repository. The judgment corpus it leaves behind —
+  rubric amendments, lens library, tournament records — is the measured
+  product; the deliverable is the by-product.

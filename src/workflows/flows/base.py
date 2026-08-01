@@ -39,6 +39,7 @@ DEFAULT_BINDINGS = {
     "review-3": ("strongest-same-family", "high"),
     "review-4": ("cross-family", "high"),
     "adjudication": ("strongest-same-family", "high"),
+    "judge": ("strongest-same-family", "high"),
 }
 
 

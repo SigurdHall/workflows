@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rubric-amendment.schema.json",
+  "title": "Rubric amendment",
+  "description": "The rule a human override implies. A pick teaches the system one bit and evaporates; an induced, ratified rule applies to every later comparison. This document is a proposal only — nothing enters a rubric until the owner ratifies it by editing the rubric file themselves.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "rule", "rationale", "non_claims"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "workflows.rubric-amendment.v1" },
+    "rule": {
+      "description": "One explicit, rankable rule, phrased so the owner can ratify it by reading it alone.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1200
+    },
+    "rationale": {
+      "description": "Why this rule, and not another, explains the override.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "slots_after": {
+      "description": "The existing criterion this rule should follow in precedence, when the inducer has a view.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "conflicts": {
+      "description": "Existing criteria this rule would fight with. Naming them is what makes ratification informed rather than rubber-stamped.",
+      "type": "array",
+      "maxItems": 20,
+      "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+    },
+    "non_claims": { "$ref": "core.defs.schema.json#/$defs/non_claims" }
+  }
+}

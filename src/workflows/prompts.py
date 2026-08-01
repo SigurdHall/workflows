@@ -238,3 +238,74 @@ def repair(
             _output_section(output_schema),
         ]
     )
+
+
+def duel(
+    *,
+    rubric: str,
+    output_schema: dict[str, Any],
+    one: str,
+    two: str,
+) -> str:
+    """A blind pairwise duel prompt.
+
+    There is deliberately no parameter for where the candidates came from:
+    not the lineage, not the author, not which of them is the incumbent. A
+    judge that cannot be told is a judge that cannot be biased, and the way
+    to guarantee that is a prompt with no field for the knowledge.
+    """
+    return _assemble(
+        [
+            _header("judge"),
+            _section("Rubric", rubric),
+            _section("Candidate one", one),
+            _section("Candidate two", two),
+            _section(
+                "How to judge",
+                "Apply the rubric exactly as written. Check its disqualifiers "
+                "before ranking anything. Then walk the ranked criteria in "
+                "order: the first criterion that separates the candidates "
+                "decides, and later criteria stop mattering. Prefer neither "
+                "when nothing separates them - 'none' is a verdict, not a "
+                "failure. Every preference must point at concrete places in "
+                "both candidates; a preference that points at nothing will "
+                "be rejected.",
+            ),
+            _output_section(output_schema),
+        ]
+    )
+
+
+def induction(
+    *,
+    rubric: str,
+    output_schema: dict[str, Any],
+    chosen: str,
+    over: str,
+) -> str:
+    """The rule a human override implies.
+
+    The owner ranked one candidate above another against the standing
+    rubric's outcome. A pick teaches the system one bit and evaporates; the
+    point of this prompt is to turn it into a law the owner can ratify.
+    """
+    return _assemble(
+        [
+            _header("judge"),
+            _section("Rubric", rubric),
+            _section("The owner's choice", chosen),
+            _section("Ranked above", over),
+            _section(
+                "What to induce",
+                "The owner overrode a tournament: they ranked the first of "
+                "these candidates above the second, against the standing "
+                "rubric's outcome. Induce the single explicit rule that, "
+                "added to the rubric, would have produced the owner's "
+                "ranking. Phrase it so the owner can ratify it by reading it "
+                "alone, and name the existing criteria it would fight with - "
+                "an amendment that hides its conflicts cannot be ratified "
+                "honestly.",
+            ),
+            _output_section(output_schema),
+        ]
+    )
